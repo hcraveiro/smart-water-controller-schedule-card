@@ -27,7 +27,7 @@ To get your Card working you will need to have your [Smart Water Controller](htt
 For each controller that you want to use, you can have a card, which should be added as a manual card with:
 ```yaml
 type: custom:smart-water-controller-schedule-card
-sensor: sensor.<mac_address>_controller_status
+sensor: sensor.<config entry name>_controller_status
 ```
 
 The Card will appear on your dashboard and you can/should configure for each month:
@@ -38,4 +38,5 @@ The Card will appear on your dashboard and you can/should configure for each mon
 You should save afterwards, making it persisted on your Smart Water Controller integration.
 
 ## FAQ
+
 
