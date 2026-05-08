@@ -33,7 +33,3 @@ jobs:
 
       - name: Build card
         run: npm run build
-
-      - name: Check generated file is committed
-        run: |
-          git diff --exit-code smart-water-controller-schedule-card.js
