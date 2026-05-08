@@ -1,0 +1,39 @@
+name: Build
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "webpack.config.js"
+  pull_request:
+    paths:
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "webpack.config.js"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build card
+        run: npm run build
+
+      - name: Check generated file is committed
+        run: |
+          git diff --exit-code smart-water-controller-schedule-card.js
