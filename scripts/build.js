@@ -4,8 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
+// The schedule card is read from its readable source, like the other three.
+// It used to be read from src/schedule-card.js, a minified snapshot of the
+// May build: that made the maintained source dead code, so a fix to it never
+// reached a user, and the only way to change the shipped card was to edit
+// minified output.
 const inputs = [
-  'src/schedule-card.js',
+  'src/smart-water-controller-schedule-card.js',
   'src/schedule-style.js',
   'src/overview-card.js',
   'src/zones-card.js'

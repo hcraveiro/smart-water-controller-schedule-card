@@ -1,10 +1,10 @@
 {
   "name": "smart-water-controller-schedule-card",
   "private": true,
-  "version": "1.0.2",
+  "version": "2.0.1",
   "description": "Smart Water Controller Schedule Card",
   "scripts": {
-    "build": "webpack",
+    "build": "node scripts/build.js",
     "watch": "webpack --watch --mode=development"
   },
   "repository": {

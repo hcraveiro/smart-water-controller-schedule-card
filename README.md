@@ -129,6 +129,37 @@ header: false
 
 To show a heading, use `header: true`. An optional `title: Irrigation Schedule` overrides the friendly name. The card loads the controller schedule from the sensor's attributes, supports month selection, days between cycles, multiple watering times and duration per station. **Save updates the real controller schedule.**
 
+One row is always shown per station reported by the integration, even for a month that has never been configured; use `0` to skip a station in that month. **Copy this month** copies the selected month to the rest of the year or to all other months, asks for confirmation, and is only persisted when you click **Save**.
+
+While there are unsaved changes the card shows an **Unsaved changes** badge, and **Reload** discards them and reads the schedule back from Home Assistant. The card warns you when the same time appears more than once in a month — duplicated times are counted twice when the integration works out the daily water target, so the month would get double the water you expect, and **Remove duplicates** cleans them up — and when the schedule changed in Home Assistant while you were editing, because saving would overwrite that change.
+
+Custom station names need Smart Water Controller **1.2.1 or newer**, the first version that publishes `station_names` on the controller status sensor. Without it the card falls back to `Station 1`, `Station 2`, and so on.
+
+#### Month calendar
+
+Under the editor the card draws the selected month as a calendar and marks the days that will water, so you can see what the interval and the times add up to before saving. It is shown by default and can be turned off:
+
+```yaml
+type: custom:smart-water-controller-schedule-card
+sensor: sensor.rainbird_controller_status
+calendar: false
+```
+
+A day is marked only if the month has at least one time **and** at least one station above `0` minutes: a month with times but no minutes is configured and still waters nothing, and the calendar says so rather than drawing an empty grid.
+
+**Future days are a projection, not a plan.** The integration does not water on fixed dates: `interval_days` counts from the last time the ground got wet, which is the later of the last rain and the last sprinkle, so rain restarts the count and moves every day after it. The calendar states which of the two it is drawing underneath the grid:
+
+- **the current month**, when the anchor is readable: counted forward from the real last-wet date, with today marked blocked if the interval has not elapsed yet;
+- **any other month**: the interval applied from the 1st, because there is no way to know what the weather will have done by then.
+
+The anchor comes from the `interval_days`, `last_rain`, `last_sprinkle`, `interval_anchor` and `blocked_today` attributes of the integration's `*_next_schedule` sensor, which the card finds by itself. It needs Smart Water Controller **1.2.5 or newer**; with an older version the calendar still draws the pattern, without the anchor. Point it at a specific sensor if automatic discovery picks the wrong controller:
+
+```yaml
+next_schedule: sensor.rainbird_next_schedule
+```
+
+The calendar is a view, not a day editor: the stored plan is one entry per month, and there is nowhere to put "the 12th of June at 6:30" differently from the rest of June, so clicking a day does nothing.
+
 ## Tested migration
 
 The `v2.0.0-beta.1` HACS prerelease was installed and the existing `Utilities / irri` view rendered all bundled cards successfully with **only the HACS resource enabled**. Schedule edits were verified in both directions between the original and bundled card, zone operation was tested, and the desktop click issue was retested after fixing excessive DOM rerenders. This is a user-tested setup, not an automated end-to-end compatibility guarantee.
@@ -136,7 +167,7 @@ The `v2.0.0-beta.1` HACS prerelease was installed and the existing `Utilities / 
 ## Development
 
 Sources:
-- `src/schedule-card.js`
+- `src/smart-water-controller-schedule-card.js`
 - `src/schedule-style.js`
 - `src/overview-card.js`
 - `src/zones-card.js`
@@ -144,10 +175,12 @@ Sources:
 Build from the repository root with Node.js:
 
 ```sh
-node scripts/build.js
+npm run build        # or: node scripts/build.js
 ```
 
-This generates `smart-water-controller-schedule-card.js`, the single HACS resource. The script checks individual source files and the bundle with `node --check`.
+This generates `smart-water-controller-schedule-card.js`, the single HACS resource. The script checks each source file and the bundle with `node --check`.
+
+The schedule card is built from its readable source, like the other three. It used to be concatenated from `src/schedule-card.js`, a minified snapshot of an earlier build: that left the maintained source unused by any build, so a change to it never reached a user, and the only way to alter the shipped card was to edit minified output. `npm run build` also used to run webpack, which wrote the schedule card alone over the unified bundle in the repository root and silently dropped the other three cards; webpack now writes to `dist/` and is not part of the bundle build.
 
 See [TESTING.md](TESTING.md) for isolated `-dev` testing, [UNIFIED-CARDS.md](UNIFIED-CARDS.md) for architecture, and [BETA-RELEASE-NOTES.md](BETA-RELEASE-NOTES.md) for prerelease notes.
 
