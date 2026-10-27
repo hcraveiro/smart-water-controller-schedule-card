@@ -156,7 +156,22 @@ class IrrigationScheduleCard extends HTMLElement {
         this._forecastKey = null;
         this._unsubscribeForecast = null;
         this._dailyForecast = null;
+        this._selectedCalendarDay = null;
 
+        this.shadowRoot.addEventListener("click", (event) => {
+            const cell = event.target.closest?.(".cal-cell[data-day]");
+            if (!cell) return;
+            const day = Number(cell.dataset.day);
+            this._selectedCalendarDay = this._selectedCalendarDay === day ? null : day;
+            this.render();
+        });
+        this.shadowRoot.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            const cell = event.target.closest?.(".cal-cell[data-day]");
+            if (!cell) return;
+            event.preventDefault();
+            cell.click();
+        });
         this.shadowRoot.addEventListener("focusout", () => {
             window.setTimeout(() => {
                 if (!this._hasActiveEditor() && this._pendingEntitySync && !this._isDirty) {
@@ -656,6 +671,7 @@ class IrrigationScheduleCard extends HTMLElement {
     _changeMonth(delta) {
         this.currentMonth = (this.currentMonth + delta + 12) % 12;
         this._copyConfirm = null;
+        this._selectedCalendarDay = null;
         this._loadCalendarData();
         this.render();
     }
@@ -1215,6 +1231,45 @@ class IrrigationScheduleCard extends HTMLElement {
         return { rain, watered, stations, forecastRain, probability, past, known: Object.keys(amounts).some((id) => this._calendarSourceIds().includes(id)) };
     }
 
+    _renderCalendarDayDetails(year, projection) {
+        const day = this._selectedCalendarDay;
+        const entry = projection.days.find((value) => value.day === day);
+        if (!entry) return "";
+        const observations = this._calendarObservations(year, this.currentMonth, day);
+        const isHistorical = this._config?.calendar_history === true && (entry.isPast || entry.isToday);
+        const parts = [];
+        if (isHistorical) {
+            parts.push('<div>Rainfall: ' + (observations.rain === null ? 'No data' : observations.rain.toFixed(2) + ' mm') + '</div>');
+            observations.stations.forEach((amount, index) => {
+                parts.push('<div>' + escapeText(this._getStationLabel("station_" + (index + 1) + "_minutes")) +
+                    ': ' + (amount === null ? 'No data' : amount.toFixed(2) + ' mm') + '</div>');
+            });
+        } else {
+            parts.push('<div>Rain forecast: ' + (observations.forecastRain
+                ? observations.probability + '% probability'
+                : 'No rain forecast above the configured threshold') + '</div>');
+            if (entry.waters) {
+                const month = this._getMonthSchedule();
+                const stations = Object.entries(month.stations || {}).filter(([, duration]) => Number(duration) > 0);
+                if (stations.length) {
+                    const slots = (month.hours || []).filter(Boolean).length;
+                    stations.forEach(([station, duration]) => {
+                        parts.push('<div>' + escapeText(this._getStationLabel(station)) +
+                            ': ' + (Number(duration) * slots) + ' minutes planned</div>');
+                    });
+                } else {
+                    parts.push('<div>Irrigation scheduled</div>');
+                }
+            } else {
+                parts.push('<div>No irrigation currently projected</div>');
+            }
+        }
+        return '<div class="cal-day-details"><strong>' +
+            escapeText(new Date(year, this.currentMonth, day).toLocaleDateString(
+                this._hass?.locale?.language || undefined, { day: "numeric", month: "long", year: "numeric" })) +
+            '</strong>' + parts.join("") + '</div>';
+    }
+
     _renderCalendar(monthSchedule) {
         const year = this._getDisplayYear();
         const context = this._getIntervalContext();
@@ -1281,7 +1336,7 @@ class IrrigationScheduleCard extends HTMLElement {
                 const label = labelParts.join(" | ");
 
                 return `
-                    <div class="${classes.join(" ")}" title="${escapeAttribute(label)}">
+                    <div class="${classes.join(" ")}" data-day="${entry.day}" role="button" tabindex="0" aria-label="${escapeAttribute(label)}" title="${escapeAttribute(label)}">
                         <span class="cal-day">${entry.day}</span>
                         ${(this._config?.calendar_history || this._config?.calendar_weather) ?
                             '<span class="cal-icons">' +
@@ -1342,12 +1397,12 @@ class IrrigationScheduleCard extends HTMLElement {
                     ${cells}
                 </div>
 
+                ${this._selectedCalendarDay ? this._renderCalendarDayDetails(year, projection) : ""}
                 <div class="cal-legend">
                     ${(this._config?.calendar_history || this._config?.calendar_weather)
-                        ? '<span class="cal-legend-item">💧 rain (observed / ≥ threshold forecast)</span><span class="cal-legend-item">🚿 irrigation (actual / projected)</span>'
+                        ? '<span class="cal-legend-item"><ha-icon icon="mdi:water" class="cal-rain"></ha-icon>Rain</span><span class="cal-legend-item"><ha-icon icon="mdi:sprinkler" class="cal-irrigation"></ha-icon>Irrigation</span>'
                         : '<span class="cal-legend-item"><span class="cal-dot"></span>waters</span>'}
-                    <span class="cal-legend-item"><span class="cal-swatch today"></span>today</span>
-                    <span class="cal-legend-item"><span class="cal-swatch past"></span>${this._config?.calendar_history === true ? "past: actual recorded values" : "past: not recorded here"}</span>
+                    <span class="cal-legend-item"><span class="cal-swatch today"></span>Today</span>
                 </div>
             </section>
         `;
@@ -1885,6 +1940,11 @@ class IrrigationScheduleCard extends HTMLElement {
                     background: var(--primary-color);
                 }
 
+                .cal-day-details { padding: 10px 12px; margin-top: 12px; border-radius: 8px; background: var(--secondary-background-color); font-size: 12px; line-height: 1.7; }
+                .cal-day-details strong { display: block; font-size: 13px; margin-bottom: 4px; }
+                .cal-cell[data-day] { cursor: pointer; }
+                .cal-cell[data-day]:focus-visible { outline: 2px solid var(--primary-color); }
+                .cal-legend ha-icon { --mdc-icon-size: 16px; width: 16px; height: 16px; }
                 .cal-legend {
                     display: flex;
                     flex-wrap: wrap;
