@@ -1010,6 +1010,12 @@ class IrrigationScheduleCard extends HTMLElement {
     _getDisplayYear(monthIndex = this.currentMonth) {
         const now = new Date();
 
+        if (this._config?.calendar_history === true) {
+            const previousMonth = (now.getMonth() + 11) % 12;
+            if (monthIndex === previousMonth) {
+                return now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+            }
+        }
         return monthIndex >= now.getMonth() ? now.getFullYear() : now.getFullYear() + 1;
     }
 
@@ -1097,7 +1103,9 @@ class IrrigationScheduleCard extends HTMLElement {
         const dateKey = this._calendarKey(year, month) + "-" + String(day).padStart(2, "0");
         const amounts = this._historyByDay?.[dateKey] ?? {};
         const rain = Number(amounts[this._config?.calendar_rain_sensor] ?? 0);
-        const stations = (this._config?.calendar_station_sensors ?? []).map((id) => Number(amounts[id] ?? 0));
+        const configuredStations = Array.isArray(this._config?.calendar_station_sensors)
+            ? this._config.calendar_station_sensors : [];
+        const stations = configuredStations.map((id) => Number(amounts[id] ?? 0));
         const watered = stations.some((amount) => amount > 0);
         const today = new Date();
         const date = new Date(year, month, day);
@@ -1149,7 +1157,7 @@ class IrrigationScheduleCard extends HTMLElement {
             ...projection.days.map((entry) => {
                 const classes = ["cal-cell"];
 
-                if (entry.waters) {
+                if (entry.waters && !(this._config?.calendar_history === true && entry.isPast)) {
                     classes.push("waters");
                 }
                 if (entry.isToday) {
