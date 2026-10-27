@@ -154,6 +154,7 @@ class IrrigationScheduleCard extends HTMLElement {
         this._historyKey = null;
         this._historyByDay = null;
         this._forecastKey = null;
+        this._unsubscribeForecast = null;
         this._dailyForecast = null;
 
         this.shadowRoot.addEventListener("focusout", () => {
@@ -171,9 +172,9 @@ class IrrigationScheduleCard extends HTMLElement {
             throw new Error("You need to define a sensor in config.");
         }
 
+        this._unsubscribeCalendarForecast();
         this._config = config;
         this._historyKey = null;
-        this._forecastKey = null;
         this.sensor = config.sensor;
         this._entitySignature = null;
         this._pendingEntitySync = false;
@@ -1092,22 +1093,41 @@ class IrrigationScheduleCard extends HTMLElement {
             }
         }
         const weatherId = this._config?.calendar_weather;
-        if (typeof weatherId === "string" && weatherId.startsWith("weather.") && typeof this._hass.callWS === "function") {
-            const forecastKey = weatherId + "|" + new Date().toDateString();
-            if (this._forecastKey !== forecastKey) {
-                this._forecastKey = forecastKey;
+        if (typeof weatherId === "string" && weatherId.startsWith("weather.")
+            && typeof this._hass.connection?.subscribeMessage === "function") {
+            if (this._forecastKey !== weatherId) {
+                this._unsubscribeCalendarForecast();
+                this._forecastKey = weatherId;
                 this._dailyForecast = null;
-                this._hass.callWS({ type: "weather/forecast", entity_id: weatherId, forecast_type: "daily" })
-                    .then((response) => {
-                        if (this._forecastKey !== forecastKey) return;
-                        this._dailyForecast = Array.isArray(response?.forecast)
-                            ? response.forecast : (Array.isArray(response) ? response : []);
-                        this.render();
-                    }).catch(() => {
-                        if (this._forecastKey === forecastKey) this._dailyForecast = [];
+                const requestKey = weatherId;
+                this._hass.connection.subscribeMessage((event) => {
+                    if (this._forecastKey !== requestKey) return;
+                    this._dailyForecast = Array.isArray(event?.forecast) ? event.forecast : [];
+                    this.render();
+                }, { type: "weather/subscribe_forecast", entity_id: weatherId, forecast_type: "daily" })
+                    .then((unsubscribe) => {
+                        if (this._forecastKey === requestKey) this._unsubscribeForecast = unsubscribe;
+                        else unsubscribe();
+                    })
+                    .catch(() => {
+                        if (this._forecastKey === requestKey) this._dailyForecast = [];
                     });
             }
+        } else if (this._forecastKey) {
+            this._unsubscribeCalendarForecast();
         }
+    }
+
+    _unsubscribeCalendarForecast() {
+        if (typeof this._unsubscribeForecast === "function") {
+            this._unsubscribeForecast();
+            this._unsubscribeForecast = null;
+        }
+        this._forecastKey = null;
+    }
+
+    disconnectedCallback() {
+        this._unsubscribeCalendarForecast();
     }
 
     _calendarObservations(year, month, day) {
