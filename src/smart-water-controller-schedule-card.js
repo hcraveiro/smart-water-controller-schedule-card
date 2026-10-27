@@ -14,6 +14,125 @@ function escapeAttribute(value) {
         .replace(/'/g, "&#39;");
 }
 
+function toMidnight(value) {
+    if (!value) {
+        return null;
+    }
+
+    const date = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function daysBetween(from, to) {
+    return Math.round((to.getTime() - from.getTime()) / 86400000);
+}
+
+// Which days of a month water, and how much of that is a fact.
+//
+// `interval_days` is not a grid on the calendar. Smart Water Controller blocks
+// a day when fewer than `interval_days` have passed since the later of the last
+// rain and the last sprinkle (ScheduleStateManager.recent_event_blocks_today),
+// so rain resets the countdown: "every 2 days" means "two days after the ground
+// last got wet", not "even days". Every future day is therefore a projection at
+// unchanged weather, and this function keeps that distinction explicit:
+//
+//   - days before today are never marked. With only the latest anchor and no
+//     history, an old anchor would otherwise paint weeks of waterings that
+//     never happened;
+//   - today comes from the integration's own verdict (`blockedToday`) when it
+//     is known, instead of being re-derived here, so the card cannot disagree
+//     with the scheduler about the one day that is already decided;
+//   - the rest is chained forward, each projected day becoming the next anchor.
+//
+// `mode` says which of the two readings the caller is showing: "projected" when
+// anchored on real data for the month we are actually in, "pattern" when it is
+// just the shape of the rule applied from the 1st (any other month, or no
+// anchor published), where anchoring would be arithmetic dressed up as a
+// forecast.
+function projectWateringDays({
+    year,
+    monthIndex,
+    hours,
+    intervalDays,
+    anchor = null,
+    today = new Date(),
+    blockedToday = null,
+}) {
+    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+    const step = Math.max(1, Number(intervalDays) || 0);
+    const waterHours = Array.isArray(hours) ? hours.filter(Boolean) : [];
+    const midnightToday = toMidnight(today);
+    const anchorDay = toMidnight(anchor);
+
+    const isThisMonth =
+        midnightToday.getFullYear() === year && midnightToday.getMonth() === monthIndex;
+    const mode = isThisMonth && anchorDay ? "projected" : "pattern";
+
+    const days = Array.from({ length: daysInMonth }, (_, index) => {
+        const day = index + 1;
+        const date = new Date(year, monthIndex, day);
+        const delta = daysBetween(midnightToday, date);
+
+        return {
+            day,
+            weekday: date.getDay(),
+            isToday: isThisMonth && delta === 0,
+            isPast: delta < 0,
+            waters: false,
+            blocked: false,
+        };
+    });
+
+    if (!waterHours.length) {
+        return { mode, days, hours: waterHours, intervalDays: step, daysInMonth };
+    }
+
+    // In "pattern" mode the 1st is the reference, so put the virtual previous
+    // watering exactly one interval before it.
+    let lastWet = mode === "projected"
+        ? anchorDay
+        : new Date(year, monthIndex, 1 - step);
+
+    days.forEach((entry) => {
+        const date = new Date(year, monthIndex, entry.day);
+
+        // The past is not ours to claim, and treating it as an anchor would push
+        // the real projection out of phase.
+        if (entry.isPast && mode === "projected") {
+            return;
+        }
+
+        // Today is already decided by the scheduler. This also covers the case
+        // the arithmetic gets wrong on its own: the ground got wet earlier
+        // *today* and the remaining slots still run, because an event from
+        // today does not block today.
+        if (entry.isToday && typeof blockedToday === "boolean") {
+            entry.blocked = blockedToday;
+            entry.waters = !blockedToday;
+
+            if (entry.waters) {
+                lastWet = date;
+            }
+
+            return;
+        }
+
+        if (daysBetween(lastWet, date) < step) {
+            return;
+        }
+
+        entry.waters = true;
+        lastWet = date;
+    });
+
+    return { mode, days, hours: waterHours, intervalDays: step, daysInMonth };
+}
+
 class IrrigationScheduleCard extends HTMLElement {
     constructor() {
         super();
@@ -31,6 +150,7 @@ class IrrigationScheduleCard extends HTMLElement {
         this._entitySignature = null;
         this._pendingEntitySync = false;
         this._externalChangePending = false;
+        this._copyConfirm = null;
 
         this.shadowRoot.addEventListener("focusout", () => {
             window.setTimeout(() => {
@@ -94,7 +214,11 @@ class IrrigationScheduleCard extends HTMLElement {
     }
 
     getCardSize() {
-        return this._shouldShowHeader() ? 8 : 7;
+        // The calendar adds a weekday row, up to six week rows and a legend.
+        const calendar = this._config?.calendar === true ? 5 : 0;
+        const copy = this._config?.copy_month === true ? 2 : 0;
+
+        return (this._shouldShowHeader() ? 8 : 7) + calendar + copy;
     }
 
     _getEntity() {
@@ -140,6 +264,11 @@ class IrrigationScheduleCard extends HTMLElement {
             schedule: entity?.attributes?.schedule ?? null,
             station_names: entity?.attributes?.station_names ?? null,
             num_stations: entity?.attributes?.num_stations ?? null,
+            // Rain moves the calendar without the schedule changing at all, so
+            // the anchor belongs in the signature or the grid would keep showing
+            // yesterday's projection. Only when the calendar is on: otherwise an
+            // unrelated change must not redraw the card.
+            interval: this._config?.calendar === true ? this._getIntervalContext() : null,
             header: Boolean(this._config?.header),
             title: this._getHeaderTitle(),
         });
@@ -239,6 +368,65 @@ class IrrigationScheduleCard extends HTMLElement {
         });
     }
 
+    // The sensor that publishes when the schedule last ran and where its
+    // interval counts from. Smart Water Controller 1.1.2 and newer put these on
+    // the "next schedule" sensor of the same controller. Found, in order, by:
+    // the `next_schedule` option, the sibling of the configured sensor
+    // (`..._controller_status` -> `..._next_schedule`), or the only sensor that
+    // publishes `has_watering_slots`. With several controllers and no option it
+    // does not guess, because projecting from another controller's rain would
+    // be worse than showing nothing.
+    _getNextScheduleEntity() {
+        const states = this._hass?.states ?? {};
+
+        if (this._config?.next_schedule) {
+            return states[this._config.next_schedule] ?? null;
+        }
+
+        const derived = String(this.sensor ?? "").replace(
+            /_controller_status$/,
+            "_next_schedule"
+        );
+
+        if (derived !== this.sensor && states[derived]) {
+            return states[derived];
+        }
+
+        const candidates = Object.keys(states).filter(
+            (entityId) =>
+                entityId.startsWith("sensor.") &&
+                states[entityId]?.attributes?.has_watering_slots !== undefined
+        );
+
+        return candidates.length === 1 ? states[candidates[0]] : null;
+    }
+
+    // The anchor the interval counts from, as published by the integration.
+    // `last_rain` lives on the weather device, with a different entity prefix,
+    // so it cannot be derived from the controller the card was pointed at -
+    // which is why the integration republishes it on the next-schedule sensor.
+    _getIntervalContext() {
+        const attrs = this._getNextScheduleEntity()?.attributes ?? {};
+
+        // Without the published anchor, count from the later of the two, as the
+        // scheduler does: a rain after the last sprinkle resets the interval too.
+        const wet = [toMidnight(attrs.last_sprinkle), toMidnight(attrs.last_rain)]
+            .filter(Boolean);
+        const anchor = attrs.interval_anchor
+            ? toMidnight(attrs.interval_anchor)
+            : wet.length
+                ? new Date(Math.max(...wet.map((date) => date.getTime())))
+                : null;
+
+        return {
+            anchor,
+            blockedToday:
+                typeof attrs.blocked_today === "boolean" ? attrs.blocked_today : null,
+            blockedUntil: attrs.blocked_until ?? null,
+            available: Boolean(attrs.interval_anchor || attrs.last_sprinkle || attrs.last_rain),
+        };
+    }
+
     _syncFromEntity(force = false) {
         if (!this._hass || !this.sensor) {
             this.render();
@@ -284,6 +472,7 @@ class IrrigationScheduleCard extends HTMLElement {
         this._isDirty = false;
         this._pendingEntitySync = false;
         this._externalChangePending = false;
+        this._copyConfirm = null;
         this._syncFromEntity(true);
         this._setStatus("Reloaded the schedule from Home Assistant.");
     }
@@ -455,11 +644,13 @@ class IrrigationScheduleCard extends HTMLElement {
 
     _changeMonth(delta) {
         this.currentMonth = (this.currentMonth + delta + 12) % 12;
+        this._copyConfirm = null;
         this.render();
     }
 
     _selectMonth(monthIndex) {
         this.currentMonth = Number(monthIndex);
+        this._copyConfirm = null;
         this.render();
     }
 
@@ -561,6 +752,72 @@ class IrrigationScheduleCard extends HTMLElement {
         if (commit && monthSchedule.stations[stationKey] !== parsed) {
             this.render();
         }
+    }
+
+    // "Copy this month" reuses the selected month in others, so a year does not
+    // have to be filled in twelve times. It never writes anything on its own:
+    // it asks first, says how many months already have times that it would
+    // replace, and leaves the card unsaved so Save (or Reload) decides.
+    _requestCopyMonth(target) {
+        if (!target) {
+            return;
+        }
+
+        this._copyConfirm = target;
+        this.render();
+    }
+
+    _cancelCopyMonth() {
+        this._copyConfirm = null;
+        this.render();
+    }
+
+    _copyMonthTo(target) {
+        const source = this._ensureScheduleData();
+        const targets = this._copyTargetIndexes(target);
+
+        targets.forEach((monthIndex) => {
+            this.scheduleData[monthIndex] = {
+                hours: [...source.hours],
+                stations: { ...source.stations },
+                interval_days: source.interval_days,
+            };
+        });
+
+        this._copyConfirm = null;
+        this._markDirty();
+        this.render();
+        this._setStatus(
+            `Copied ${this._formatMonthName(this.currentMonth)} to ` +
+            `${targets.length} ${targets.length === 1 ? "month" : "months"}. ` +
+            "Not saved yet."
+        );
+    }
+
+    _copyTargetIndexes(target) {
+        const all = Array.from({ length: 12 }, (_, index) => index);
+
+        if (target === "rest") {
+            return all.filter((index) => index > this.currentMonth);
+        }
+
+        return all.filter((index) => index !== this.currentMonth);
+    }
+
+    _copyTargetLabel(target) {
+        const count = this._copyTargetIndexes(target).length;
+        const noun = count === 1 ? "month" : "months";
+
+        return target === "rest"
+            ? `the remaining ${count} ${noun} of the year`
+            : `the other ${count} ${noun}`;
+    }
+
+    // How many of the months a copy would replace already have times set.
+    _copyReplacesCount(target) {
+        return this._copyTargetIndexes(target).filter(
+            (index) => this._getMonthSchedule(index).hours.length > 0
+        ).length;
     }
 
     _setStatus(message, type = "info") {
@@ -687,6 +944,19 @@ class IrrigationScheduleCard extends HTMLElement {
             this._reloadFromEntity();
         });
 
+        root.querySelector("[data-action='request-copy']")?.addEventListener("click", () => {
+            const target = root.querySelector("[data-role='copy-target']")?.value;
+            this._requestCopyMonth(target);
+        });
+
+        root.querySelector("[data-action='confirm-copy']")?.addEventListener("click", () => {
+            this._copyMonthTo(this._copyConfirm);
+        });
+
+        root.querySelector("[data-action='cancel-copy']")?.addEventListener("click", () => {
+            this._cancelCopyMonth();
+        });
+
         const intervalInput = root.querySelector("[data-role='interval-days']");
         intervalInput?.addEventListener("input", (event) => {
             this._updateIntervalDays(event.target.value);
@@ -725,6 +995,134 @@ class IrrigationScheduleCard extends HTMLElement {
                 this._updateStationTime(stationKey, event.currentTarget.value, { commit: true });
             });
         });
+    }
+
+    // The schedule repeats every year, so a month on its own does not pin down
+    // a calendar: the weekdays differ. "June" asked in October means next June,
+    // and the year is printed in the heading so the choice is never implicit.
+    _getDisplayYear(monthIndex = this.currentMonth) {
+        const now = new Date();
+
+        return monthIndex >= now.getMonth() ? now.getFullYear() : now.getFullYear() + 1;
+    }
+
+    _getFirstWeekday() {
+        return this._hass?.locale?.first_weekday === "sunday" ? 0 : 1;
+    }
+
+    _renderCalendar(monthSchedule) {
+        const year = this._getDisplayYear();
+        const context = this._getIntervalContext();
+        const hasTimes = (monthSchedule.hours ?? []).some(Boolean);
+        // Times on a station with no minutes start nothing, so with every
+        // station at 0 there is no day to mark, only the note to write.
+        const canWater = Object.values(monthSchedule.stations ?? {})
+            .some((value) => Number(value) > 0);
+        const projection = projectWateringDays({
+            year,
+            monthIndex: this.currentMonth,
+            hours: canWater ? monthSchedule.hours : [],
+            intervalDays: monthSchedule.interval_days,
+            anchor: context.anchor,
+            blockedToday: context.blockedToday,
+        });
+
+        const firstWeekday = this._getFirstWeekday();
+        // Walk out from the Sunday of an arbitrary week rather than assuming
+        // which weekday a hardcoded date fell on.
+        const reference = new Date(2026, 1, 1);
+        const sunday = reference.getDate() - reference.getDay();
+        const weekdays = Array.from({ length: 7 }, (_, offset) =>
+            new Date(2026, 1, sunday + ((firstWeekday + offset) % 7)).toLocaleString(
+                this._hass?.locale?.language || undefined,
+                { weekday: "short" }
+            )
+        );
+
+        const leading = (projection.days[0].weekday - firstWeekday + 7) % 7;
+
+        const cells = [
+            ...Array.from({ length: leading }, () => '<div class="cal-cell empty"></div>'),
+            ...projection.days.map((entry) => {
+                const classes = ["cal-cell"];
+
+                if (entry.waters) {
+                    classes.push("waters");
+                }
+                if (entry.isToday) {
+                    classes.push("today");
+                }
+                if (entry.blocked) {
+                    classes.push("blocked");
+                }
+                if (entry.isPast) {
+                    classes.push("past");
+                }
+
+                const label = entry.waters
+                    ? `${entry.day}: ${projection.hours.join(", ")}`
+                    : String(entry.day);
+
+                return `
+                    <div class="${classes.join(" ")}" title="${escapeAttribute(label)}">
+                        <span class="cal-day">${entry.day}</span>
+                        ${entry.waters ? '<span class="cal-dot"></span>' : ""}
+                    </div>
+                `;
+            }),
+        ].join("");
+
+        const every = `every ${projection.intervalDays} ${projection.intervalDays === 1 ? "day" : "days"}`;
+        let note;
+
+        if (!hasTimes) {
+            note = "No times configured for this month, so no day waters.";
+        } else if (!canWater) {
+            note =
+                "Times are set but every station is at 0 minutes, so these days " +
+                "start nothing.";
+        } else if (projection.mode === "projected") {
+            const until = context.blockedUntil
+                ? ` Watering is on hold until ${escapeText(context.blockedUntil)}.`
+                : "";
+
+            note =
+                "Projected from the last rain or sprinkle, assuming the weather does " +
+                "not change. Rain resets the interval, so these days can move, and a " +
+                "rain forecast can still shorten or skip a watering shown here." + until;
+        } else if (!context.available) {
+            note =
+                `Only the pattern of the rule - ${every} from the 1st. This ` +
+                "controller does not publish the last rain and sprinkle (Smart Water " +
+                "Controller 1.1.2 or newer does), so the real days cannot be projected.";
+        } else {
+            note =
+                `Only the pattern of the rule - ${every} from the 1st. The real ` +
+                "days depend on when it last rained, which is only known for the " +
+                "current month.";
+        }
+
+        return `
+            <section class="section">
+                <h3 class="section-title">
+                    Calendar ${escapeText(this._formatMonthName(this.currentMonth))} ${year}
+                </h3>
+                <p class="section-description cal-note">${note}</p>
+
+                <div class="cal-grid" role="grid" aria-label="Watering days">
+                    ${weekdays.map((name) => `
+                        <div class="cal-weekday">${escapeText(name)}</div>
+                    `).join("")}
+                    ${cells}
+                </div>
+
+                <div class="cal-legend">
+                    <span class="cal-legend-item"><span class="cal-dot"></span>waters</span>
+                    <span class="cal-legend-item"><span class="cal-swatch today"></span>today</span>
+                    <span class="cal-legend-item"><span class="cal-swatch past"></span>past, not recorded here</span>
+                </div>
+            </section>
+        `;
     }
 
     render() {
@@ -1148,6 +1546,140 @@ class IrrigationScheduleCard extends HTMLElement {
                     color: var(--secondary-text-color);
                 }
 
+                .copy-row {
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) auto;
+                    gap: 10px;
+                    align-items: center;
+                }
+
+                .compact-select {
+                    width: 100%;
+                    min-height: 40px;
+                    padding: 0 12px;
+                    border: 1px solid var(--divider-color);
+                    border-radius: 12px;
+                    background: var(--ha-card-background, var(--card-background-color, #fff));
+                    color: var(--primary-text-color);
+                    font: inherit;
+                    outline: none;
+                    cursor: pointer;
+                }
+
+                .compact-select:focus {
+                    border-color: var(--primary-color);
+                    box-shadow: 0 0 0 1px var(--primary-color);
+                }
+
+                .confirm-bar {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                    margin-top: 12px;
+                    padding: 10px 12px;
+                    border-radius: 12px;
+                    border: 1px solid color-mix(in srgb, var(--warning-color, #fb8c00) 40%, transparent);
+                    background: color-mix(in srgb, var(--warning-color, #fb8c00) 12%, transparent);
+                    color: var(--primary-text-color);
+                    font-size: 13px;
+                }
+
+                .confirm-actions {
+                    display: flex;
+                    gap: 8px;
+                }
+
+                .cal-grid {
+                    display: grid;
+                    grid-template-columns: repeat(7, 1fr);
+                    gap: 4px;
+                }
+
+                .cal-weekday {
+                    text-align: center;
+                    font-size: 11px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.04em;
+                    color: var(--secondary-text-color);
+                    padding-bottom: 2px;
+                }
+
+                .cal-cell {
+                    position: relative;
+                    aspect-ratio: 1;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 2px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    background: var(--secondary-background-color);
+                    color: var(--primary-text-color);
+                }
+
+                .cal-cell.empty {
+                    background: none;
+                }
+
+                .cal-cell.past {
+                    opacity: 0.45;
+                }
+
+                .cal-cell.waters {
+                    background: color-mix(in srgb, var(--primary-color) 18%, transparent);
+                    font-weight: 500;
+                }
+
+                .cal-cell.today {
+                    outline: 2px solid var(--primary-color);
+                    outline-offset: -2px;
+                }
+
+                .cal-cell.blocked .cal-day {
+                    text-decoration: line-through;
+                }
+
+                .cal-dot {
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 50%;
+                    background: var(--primary-color);
+                }
+
+                .cal-legend {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 14px;
+                    margin-top: 10px;
+                    font-size: 12px;
+                    color: var(--secondary-text-color);
+                }
+
+                .cal-legend-item {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 5px;
+                }
+
+                .cal-swatch {
+                    width: 12px;
+                    height: 12px;
+                    border-radius: 4px;
+                    background: var(--secondary-background-color);
+                }
+
+                .cal-swatch.today {
+                    background: none;
+                    border: 2px solid var(--primary-color);
+                }
+
+                .cal-swatch.past {
+                    opacity: 0.45;
+                }
+
                 @media (max-width: 520px) {
                     .wrapper {
                         padding: 12px;
@@ -1165,6 +1697,10 @@ class IrrigationScheduleCard extends HTMLElement {
 
                     .footer {
                         align-items: stretch;
+                    }
+
+                    .copy-row {
+                        grid-template-columns: 1fr;
                     }
 
                     .footer-actions {
@@ -1225,6 +1761,10 @@ class IrrigationScheduleCard extends HTMLElement {
                         <ha-icon icon="mdi:alert-outline"></ha-icon>
                         <span data-role="duplicate-text">${escapeText(this._duplicateMessage(duplicates))}</span>
                     </div>
+
+                    ${this.scheduleData && this._config?.calendar === true
+                        ? this._renderCalendar(monthSchedule)
+                        : ""}
 
                     ${this.scheduleData ? `
                         <section class="section">
@@ -1303,6 +1843,46 @@ class IrrigationScheduleCard extends HTMLElement {
                                 `).join("")}
                             </div>
                         </section>
+
+                        ${this._config?.copy_month === true ? `
+                            <section class="section">
+                                <h3 class="section-title">Copy this month</h3>
+                                <p class="section-description">Reuse the settings of ${escapeText(monthName)} in other months instead of filling in all twelve by hand. Nothing is saved until you press Save.</p>
+
+                                <div class="copy-row">
+                                    <select class="compact-select" data-role="copy-target" aria-label="Copy target">
+                                        <option value="rest">To the rest of the year</option>
+                                        <option value="all">To all other months</option>
+                                    </select>
+                                    <button class="quiet-button" type="button" data-action="request-copy">
+                                        <ha-icon icon="mdi:content-copy"></ha-icon>
+                                        <span>Copy</span>
+                                    </button>
+                                </div>
+
+                                ${this._copyConfirm ? `
+                                    <div class="confirm-bar">
+                                        <span>
+                                            Overwrite ${escapeText(this._copyTargetLabel(this._copyConfirm))}
+                                            with ${escapeText(monthName)}?
+                                            ${this._copyReplacesCount(this._copyConfirm) ? escapeText(
+                                                this._copyReplacesCount(this._copyConfirm) === 1
+                                                    ? "1 of them already has times."
+                                                    : `${this._copyReplacesCount(this._copyConfirm)} of them already have times.`
+                                            ) : ""}
+                                        </span>
+                                        <span class="confirm-actions">
+                                            <button class="quiet-button" type="button" data-action="cancel-copy">
+                                                <span>Cancel</span>
+                                            </button>
+                                            <button class="quiet-button" type="button" data-action="confirm-copy">
+                                                <span>Overwrite</span>
+                                            </button>
+                                        </span>
+                                    </div>
+                                ` : ""}
+                            </section>
+                        ` : ""}
                     ` : `
                         <div class="placeholder">
                             ${entity ? "Loading schedule data..." : `Entity not found: ${escapeText(this.sensor)}`}
