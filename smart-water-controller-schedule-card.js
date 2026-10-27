@@ -1940,7 +1940,7 @@ class IrrigationScheduleCard extends HTMLElement {
                 .cal-icons { display: flex; gap: 2px; align-items: center; justify-content: center; height: 18px; flex: 0 0 18px; margin-top: -6px; }
                 .cal-icons ha-icon { --mdc-icon-size: 16px; --iron-icon-height: 16px; --iron-icon-width: 16px; display: block; width: 16px; height: 16px; flex: 0 0 16px; }
                 .cal-rain { color: var(--info-color, #039be5); }
-                .cal-irrigation { color: var(--success-color, #43a047); transform: translateY(-3px); }
+                .cal-irrigation { color: var(--success-color, #43a047); transform: translateY(-1px); }
 
                 .cal-dot {
                     width: 6px;
