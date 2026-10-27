@@ -401,3 +401,31 @@ test('today uses live sensor values instead of delayed hourly statistics', () =>
   assert.equal(observed.rain, 0.7);
   assert.equal(observed.watered, true);
 });
+
+test('calendar history shows the current month, three months forward, and eight months back', () => {
+  const { card } = atToday('2026-10-27', () => makeCard({
+    calendar: true, calendar_history: true
+  }));
+  const years = atToday('2026-10-27', () => Array.from({ length: 12 }, (_, month) => {
+    card.currentMonth = month;
+    return card._getDisplayYear();
+  }));
+  assert.deepEqual(years, [
+    2027, 2026, 2026, 2026, 2026, 2026,
+    2026, 2026, 2026, 2026, 2026, 2026
+  ]);
+  card.currentMonth = 7;
+  atToday('2026-10-27', () => card.render());
+  assert.match(card.shadowRoot.textContent, /Calendar August 2026/);
+  assert.equal(card.shadowRoot.querySelectorAll('.cal-cell.waters').length, 0);
+});
+
+test('January calendar window crosses the year without turning September into a future month', () => {
+  const { card } = atToday('2026-12-15', () => makeCard({
+    calendar: true, calendar_history: true
+  }));
+  const years = atToday('2026-12-15', () => [0, 1, 2, 3, 8, 10, 11].map(month =>
+    card._getDisplayYear(month)
+  ));
+  assert.deepEqual(years, [2027, 2027, 2027, 2026, 2026, 2026, 2026]);
+});
