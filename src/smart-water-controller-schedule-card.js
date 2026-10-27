@@ -1151,7 +1151,7 @@ class IrrigationScheduleCard extends HTMLElement {
             // Daily forecasts describe a local calendar date, not an instant.
             // Preserve its YYYY-MM-DD portion to avoid timezone shifts.
             const dateText = String(row.datetime || row.datetime_iso || row.date || "");
-            const match = dateText.match(/^(\\d{4})-(\\d{2})-(\\d{2})/);
+            const match = dateText.match(/^(\d{4})-(\d{2})-(\d{2})/);
             return match ? Number(match[1]) === year && Number(match[2]) === month + 1 && Number(match[3]) === day
                 : !Number.isNaN(at.getTime()) && at.getFullYear() === year && at.getMonth() === month && at.getDate() === day;
         });
