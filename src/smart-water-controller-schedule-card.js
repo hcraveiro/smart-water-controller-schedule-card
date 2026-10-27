@@ -1052,7 +1052,7 @@ class IrrigationScheduleCard extends HTMLElement {
             if (this._historyKey !== historyKey) {
                 this._historyKey = historyKey;
                 this._historyByDay = null;
-                const from = new Date(Math.max(new Date(year, month, 1).getTime(), new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30).getTime()));
+                const from = new Date(Math.max(new Date(year, month, 1).getTime(), new Date(today.getFullYear(), today.getMonth(), today.getDate() - 14).getTime()));
                 const to = new Date(Math.min(new Date(year, month + 1, 1).getTime(), new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).getTime()));
                 this._hass.callApi("GET", "history/period/" + encodeURIComponent(from.toISOString()) +
                     "?end_time=" + encodeURIComponent(to.toISOString()) +
