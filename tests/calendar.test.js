@@ -354,3 +354,48 @@ test('forecast calendar dates are not shifted by timezone offsets', () => {
   assert.match(byDay(21).innerHTML, /mdi:water/);
   assert.doesNotMatch(byDay(20).innerHTML, /mdi:water/);
 });
+
+test('hourly long-term statistics preserve end-of-day cumulative readings', async () => {
+  const { card, hass } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_rain_sensor: 'sensor.daily_rain',
+    calendar_station_sensors: ['sensor.station_1']
+  }));
+  hass.callWS = async (message) => {
+    assert.equal(message.type, 'recorder/statistics_during_period');
+    assert.equal(message.period, 'hour');
+    assert.deepEqual(message.types, ['state']);
+    return {
+      'sensor.daily_rain': [
+        { start: Date.parse('2026-06-18T22:00:00Z'), end: Date.parse('2026-06-18T23:00:00Z'), state: 5.83 },
+        { start: Date.parse('2026-06-18T23:00:00Z'), end: Date.parse('2026-06-19T00:00:00Z'), state: 5.83 }
+      ],
+      'sensor.station_1': [
+        { start: Date.parse('2026-06-18T23:00:00Z'), end: Date.parse('2026-06-19T00:00:00Z'), state: 4.2 }
+      ]
+    };
+  };
+  await atToday('2026-06-19', () => card._readCalendarStatistics(
+    card._calendarSourceIds(),
+    new window.Date(2026, 5, 1),
+    new window.Date(2026, 5, 19),
+    card._historyKey
+  ));
+  atToday('2026-06-19', () => card.render());
+  const day = cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
+  assert.match(day.title, /5.83 mm/);
+  assert.match(day.title, /4.20 mm/);
+});
+
+test('today uses live sensor values instead of delayed hourly statistics', () => {
+  const { card, hass } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_rain_sensor: 'sensor.daily_rain',
+    calendar_station_sensors: ['sensor.station_1']
+  }));
+  hass.states['sensor.daily_rain'] = { state: '0.7' };
+  hass.states['sensor.station_1'] = { state: '2.1' };
+  const observed = atToday('2026-06-19', () => card._calendarObservations(2026, 5, 19));
+  assert.equal(observed.rain, 0.7);
+  assert.equal(observed.watered, true);
+});
