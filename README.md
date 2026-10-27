@@ -151,8 +151,10 @@ calendar_rain_probability: 50
 - Markers are informational only; they do not alter the integration's irrigation
   decisions. Rain totals from this integration are weather-provider estimates, not
   measurements from a physical rain gauge.
-- Tap or hover a day to inspect observed station and rain quantities or the forecast
-  probability where supported by your device.
+- Tap a calendar day to open its detail panel; tap again to close it. Past dates show
+  recorded rain and irrigation per station, while future dates show forecast rain
+  probability (when available) and scheduled watering minutes per station.
+- The simplified legend uses exactly the same rain and sprinkler icons as the grid.
 
 ### Irrigation Schedule
 
