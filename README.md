@@ -119,6 +119,39 @@ Only one zone expands at a time; all start collapsed. Start, Stop, Stop All and 
 
 Station entity IDs in the example reflect one RainBird setup. Adapt them to your controller; do not assume the entity IDs are universal.
 
+
+### Experimental calendar rain and irrigation markers
+
+The optional enhanced calendar combines **recorded** daily rain/irrigation for past days with
+**projected** irrigation and daily rain forecasts for future days. These options are off by
+default and currently being tested in PR #7:
+
+```yaml
+calendar: true
+calendar_history: true
+calendar_rain_sensor: sensor.rainbird_total_amount_of_rain_today
+calendar_station_sensors:
+  - sensor.rainbird_sprinkle_total_amount_today_front_lawn
+  - sensor.rainbird_sprinkle_total_amount_today_side_lawn
+  - sensor.exterior_living_room_rainbird_sprinkle_total_amount_today_station_3
+calendar_weather: weather.openweathermap
+calendar_rain_probability: 50
+```
+
+- Past-day totals come from Home Assistant Recorder history. The card reads each daily
+  accumulator and uses the largest recorded amount within the local day, so a reset at
+  midnight does not replace the previous day's irrigation or rainfall reading.
+- Historical data is limited by your Home Assistant Recorder retention, typically 30
+  days in this setup. Days without Recorder data must not be interpreted as dry days.
+- The weather entity supplies its *daily* forecast through the Home Assistant weather
+  forecast API. Markers require an available precipitation probability at or above
+  the configured percentage. Forecast availability and horizon depend on the provider.
+- Markers are informational only; they do not alter the integration's irrigation
+  decisions. Rain totals from this integration are weather-provider estimates, not
+  measurements from a physical rain gauge.
+- Tap or hover a day to inspect observed station and rain quantities or the forecast
+  probability where supported by your device.
+
 ### Irrigation Schedule
 
 ```yaml
