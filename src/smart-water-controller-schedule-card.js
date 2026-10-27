@@ -151,6 +151,10 @@ class IrrigationScheduleCard extends HTMLElement {
         this._pendingEntitySync = false;
         this._externalChangePending = false;
         this._copyConfirm = null;
+        this._historyKey = null;
+        this._historyByDay = null;
+        this._forecastKey = null;
+        this._dailyForecast = null;
 
         this.shadowRoot.addEventListener("focusout", () => {
             window.setTimeout(() => {
@@ -168,6 +172,8 @@ class IrrigationScheduleCard extends HTMLElement {
         }
 
         this._config = config;
+        this._historyKey = null;
+        this._forecastKey = null;
         this.sensor = config.sensor;
         this._entitySignature = null;
         this._pendingEntitySync = false;
@@ -181,6 +187,7 @@ class IrrigationScheduleCard extends HTMLElement {
 
     set hass(hass) {
         this._hass = hass;
+        this._loadCalendarData();
 
         if (!this.sensor) {
             this.render();
@@ -1010,6 +1017,102 @@ class IrrigationScheduleCard extends HTMLElement {
         return this._hass?.locale?.first_weekday === "sunday" ? 0 : 1;
     }
 
+
+    _calendarSourceIds() {
+        const stations = Array.isArray(this._config?.calendar_station_sensors)
+            ? this._config.calendar_station_sensors.filter((id) => typeof id === "string" && id.startsWith("sensor."))
+            : [];
+        const rain = this._config?.calendar_rain_sensor;
+        return [...new Set([...stations, ...(typeof rain === "string" && rain.startsWith("sensor.") ? [rain] : [])])];
+    }
+
+    _calendarKey(year, month) {
+        return String(year) + "-" + String(month + 1).padStart(2, "0");
+    }
+
+    _loadCalendarData() {
+        if (!this._hass || this._config?.calendar !== true) return;
+        const enabledHistory = this._config?.calendar_history === true;
+        const ids = this._calendarSourceIds();
+        const today = new Date();
+        const year = this._getDisplayYear();
+        const month = this.currentMonth;
+        const key = this._calendarKey(year, month);
+        if (enabledHistory && ids.length && new Date(year, month, 1) <= today) {
+            const historyKey = key + "|" + ids.join(",");
+            if (this._historyKey !== historyKey) {
+                this._historyKey = historyKey;
+                this._historyByDay = null;
+                const from = new Date(Math.max(new Date(year, month, 1).getTime(), new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30).getTime()));
+                const to = new Date(Math.min(new Date(year, month + 1, 1).getTime(), new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).getTime()));
+                this._hass.callApi("GET", "history/period/" + encodeURIComponent(from.toISOString()) +
+                    "?end_time=" + encodeURIComponent(to.toISOString()) +
+                    "&filter_entity_id=" + encodeURIComponent(ids.join(",")) + "&minimal_response")
+                    .then((records) => {
+                        if (this._historyKey !== historyKey) return;
+                        const daily = {};
+                        for (const series of Array.isArray(records) ? records : []) {
+                            for (const item of series) {
+                                const entityId = item.entity_id || series[0]?.entity_id;
+                                const at = new Date(item.last_changed || item.last_updated);
+                                const amount = Number(item.state);
+                                if (!ids.includes(entityId) || !Number.isFinite(amount) || amount < 0 || Number.isNaN(at.getTime())) continue;
+                                // Ignore the next day's reset and take the maximum
+                                // recorded amount inside each local calendar day.
+                                const dayKey = this._calendarKey(at.getFullYear(), at.getMonth()) + "-" + String(at.getDate()).padStart(2, "0");
+                                daily[dayKey] ??= {};
+                                daily[dayKey][entityId] = Math.max(daily[dayKey][entityId] ?? 0, amount);
+                            }
+                        }
+                        this._historyByDay = daily;
+                        this.render();
+                    }).catch(() => {
+                        if (this._historyKey === historyKey) {
+                            this._historyByDay = {};
+                            this.render();
+                        }
+                    });
+            }
+        }
+        const weatherId = this._config?.calendar_weather;
+        if (typeof weatherId === "string" && weatherId.startsWith("weather.")) {
+            const forecastKey = weatherId + "|" + new Date().toDateString();
+            if (this._forecastKey !== forecastKey) {
+                this._forecastKey = forecastKey;
+                this._dailyForecast = null;
+                this._hass.callWS({ type: "weather/forecast", entity_id: weatherId, forecast_type: "daily" })
+                    .then((response) => {
+                        if (this._forecastKey !== forecastKey) return;
+                        this._dailyForecast = Array.isArray(response?.forecast)
+                            ? response.forecast : (Array.isArray(response) ? response : []);
+                        this.render();
+                    }).catch(() => {
+                        if (this._forecastKey === forecastKey) this._dailyForecast = [];
+                    });
+            }
+        }
+    }
+
+    _calendarObservations(year, month, day) {
+        const dateKey = this._calendarKey(year, month) + "-" + String(day).padStart(2, "0");
+        const amounts = this._historyByDay?.[dateKey] ?? {};
+        const rain = Number(amounts[this._config?.calendar_rain_sensor] ?? 0);
+        const stations = (this._config?.calendar_station_sensors ?? []).map((id) => Number(amounts[id] ?? 0));
+        const watered = stations.some((amount) => amount > 0);
+        const today = new Date();
+        const date = new Date(year, month, day);
+        const past = date < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const probabilityThreshold = Number(this._config?.calendar_rain_probability ?? 50);
+        const daily = (this._dailyForecast ?? []).find((row) => {
+            const at = new Date(row.datetime || row.datetime_iso || row.date);
+            return !Number.isNaN(at.getTime()) && at.getFullYear() === year && at.getMonth() === month && at.getDate() === day;
+        });
+        const probability = Number(daily?.precipitation_probability);
+        const forecastRain = !past && daily && Number.isFinite(probability)
+            && probability >= (Number.isFinite(probabilityThreshold) ? probabilityThreshold : 50);
+        return { rain, watered, stations, forecastRain, probability, past, known: Boolean(this._historyByDay?.[dateKey]) };
+    }
+
     _renderCalendar(monthSchedule) {
         const year = this._getDisplayYear();
         const context = this._getIntervalContext();
@@ -1059,6 +1162,10 @@ class IrrigationScheduleCard extends HTMLElement {
                     classes.push("past");
                 }
 
+                const observations = this._calendarObservations(year, this.currentMonth, entry.day);
+                const showHistorical = this._config?.calendar_history === true && entry.isPast;
+                const irrigationIcon = showHistorical ? observations.watered : (!entry.isPast && entry.waters);
+                const rainIcon = showHistorical ? observations.rain > 0 : observations.forecastRain;
                 const label = entry.waters
                     ? `${entry.day}: ${projection.hours.join(", ")}`
                     : String(entry.day);
@@ -1066,7 +1173,12 @@ class IrrigationScheduleCard extends HTMLElement {
                 return `
                     <div class="${classes.join(" ")}" title="${escapeAttribute(label)}">
                         <span class="cal-day">${entry.day}</span>
-                        ${entry.waters ? '<span class="cal-dot"></span>' : ""}
+                        ${(this._config?.calendar_history || this._config?.calendar_weather) ?
+                            '<span class="cal-icons">' +
+                                (rainIcon ? '<ha-icon icon="mdi:water" class="cal-rain"></ha-icon>' : '') +
+                                (irrigationIcon ? '<ha-icon icon="mdi:sprinkler" class="cal-irrigation"></ha-icon>' : '') +
+                            '</span>' :
+                            (entry.waters ? '<span class="cal-dot"></span>' : '')}
                     </div>
                 `;
             }),
@@ -1117,7 +1229,9 @@ class IrrigationScheduleCard extends HTMLElement {
                 </div>
 
                 <div class="cal-legend">
-                    <span class="cal-legend-item"><span class="cal-dot"></span>waters</span>
+                    ${(this._config?.calendar_history || this._config?.calendar_weather)
+                        ? '<span class="cal-legend-item">💧 rain (observed / ≥ threshold forecast)</span><span class="cal-legend-item">🚿 irrigation (actual / projected)</span>'
+                        : '<span class="cal-legend-item"><span class="cal-dot"></span>waters</span>'}
                     <span class="cal-legend-item"><span class="cal-swatch today"></span>today</span>
                     <span class="cal-legend-item"><span class="cal-swatch past"></span>past, not recorded here</span>
                 </div>
@@ -1641,6 +1755,11 @@ class IrrigationScheduleCard extends HTMLElement {
                 .cal-cell.blocked .cal-day {
                     text-decoration: line-through;
                 }
+
+                .cal-icons { display: flex; gap: 1px; align-items: center; justify-content: center; }
+                .cal-icons ha-icon { --mdc-icon-size: 13px; width: 13px; height: 13px; }
+                .cal-rain { color: var(--info-color, #039be5); }
+                .cal-irrigation { color: var(--success-color, #43a047); }
 
                 .cal-dot {
                     width: 6px;
