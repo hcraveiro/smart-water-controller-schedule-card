@@ -329,3 +329,28 @@ test('past marker visibility remains disabled by default', () => {
   card.render();
   assert.equal(card.shadowRoot.querySelectorAll('.cal-icons').length, 0);
 });
+
+test('historical missing sensor values are explicitly unknown', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_rain_sensor: 'sensor.daily_rain',
+    calendar_station_sensors: ['sensor.station_1']
+  }));
+  card._historyByDay = { '2026-06-18': { 'sensor.station_1': 2.1 } };
+  atToday('2026-06-19', () => card.render());
+  const day = cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
+  assert.match(day.title, /Rain: unknown/);
+  assert.match(day.title, /2.10 mm/);
+  assert.doesNotMatch(day.innerHTML, /mdi:water/);
+});
+
+test('forecast calendar dates are not shifted by timezone offsets', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_weather: 'weather.openweathermap'
+  }));
+  card._dailyForecast = [{ datetime: '2026-06-21T00:00:00+14:00', precipitation_probability: 75 }];
+  atToday('2026-06-19', () => card.render());
+  const byDay = day => cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === day);
+  assert.match(byDay(21).innerHTML, /mdi:water/);
+  assert.doesNotMatch(byDay(20).innerHTML, /mdi:water/);
+});
