@@ -138,11 +138,13 @@ calendar_weather: weather.openweathermap
 calendar_rain_probability: 50
 ```
 
-- Past-day totals come from Home Assistant Recorder history. The card reads each daily
-  accumulator and uses the last recorded reading within the local day, immediately before the next
-  midnight reset when available.
-- Historical data is limited by your Home Assistant Recorder retention, 14
-  days in this setup. Days without Recorder data must not be interpreted as dry days.
+- Past days use Home Assistant hourly long-term statistics (the `state` value at the
+  end of each hour). These can be retained indefinitely, independently of Recorder's
+  raw-history retention. The latest observation before local midnight determines the
+  day's total. Today's amounts come directly from the current sensor states.
+- Sensors without long-term statistics fall back to Recorder's available raw history,
+  for whatever retention that installation uses. Missing readings remain unknown,
+  rather than being interpreted as zero.
 - The weather entity supplies its *daily* forecast through the Home Assistant weather
   forecast API. Markers require an available precipitation probability at or above
   the configured percentage. Forecast availability and horizon depend on the provider.
