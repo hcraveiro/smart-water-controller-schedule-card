@@ -653,12 +653,14 @@ class IrrigationScheduleCard extends HTMLElement {
     _changeMonth(delta) {
         this.currentMonth = (this.currentMonth + delta + 12) % 12;
         this._copyConfirm = null;
+        this._loadCalendarData();
         this.render();
     }
 
     _selectMonth(monthIndex) {
         this.currentMonth = Number(monthIndex);
         this._copyConfirm = null;
+        this._loadCalendarData();
         this.render();
     }
 
