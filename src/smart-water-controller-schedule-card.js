@@ -1135,18 +1135,25 @@ class IrrigationScheduleCard extends HTMLElement {
     _calendarObservations(year, month, day) {
         const dateKey = this._calendarKey(year, month) + "-" + String(day).padStart(2, "0");
         const amounts = this._historyByDay?.[dateKey] ?? {};
-        const rain = Number(amounts[this._config?.calendar_rain_sensor] ?? 0);
+        const rainValue = amounts[this._config?.calendar_rain_sensor];
+        const rain = rainValue === undefined ? null : Number(rainValue);
         const configuredStations = Array.isArray(this._config?.calendar_station_sensors)
             ? this._config.calendar_station_sensors : [];
-        const stations = configuredStations.map((id) => Number(amounts[id] ?? 0));
-        const watered = stations.some((amount) => amount > 0);
+        const stations = configuredStations.map((id) =>
+            amounts[id] === undefined ? null : Number(amounts[id]));
+        const watered = stations.some((amount) => amount !== null && amount > 0);
         const today = new Date();
         const date = new Date(year, month, day);
         const past = date < new Date(today.getFullYear(), today.getMonth(), today.getDate());
         const probabilityThreshold = Number(this._config?.calendar_rain_probability ?? 50);
         const daily = (this._dailyForecast ?? []).find((row) => {
             const at = new Date(row.datetime || row.datetime_iso || row.date);
-            return !Number.isNaN(at.getTime()) && at.getFullYear() === year && at.getMonth() === month && at.getDate() === day;
+            // Daily forecasts describe a local calendar date, not an instant.
+            // Preserve its YYYY-MM-DD portion to avoid timezone shifts.
+            const dateText = String(row.datetime || row.datetime_iso || row.date || "");
+            const match = dateText.match(/^(\\d{4})-(\\d{2})-(\\d{2})/);
+            return match ? Number(match[1]) === year && Number(match[2]) === month + 1 && Number(match[3]) === day
+                : !Number.isNaN(at.getTime()) && at.getFullYear() === year && at.getMonth() === month && at.getDate() === day;
         });
         const probability = Number(daily?.precipitation_probability);
         const forecastRain = !past && daily && Number.isFinite(probability)
@@ -1206,12 +1213,12 @@ class IrrigationScheduleCard extends HTMLElement {
                 const observations = this._calendarObservations(year, this.currentMonth, entry.day);
                 const showHistorical = this._config?.calendar_history === true && entry.isPast;
                 const irrigationIcon = showHistorical ? observations.watered : (!entry.isPast && entry.waters);
-                const rainIcon = showHistorical ? observations.rain > 0 : observations.forecastRain;
+                const rainIcon = showHistorical ? observations.rain !== null && observations.rain > 0 : observations.forecastRain;
                 const labelParts = [String(entry.day)];
                 if (showHistorical && observations.known) {
-                    labelParts.push("Rain: " + observations.rain.toFixed(2) + " mm");
+                    labelParts.push("Rain: " + (observations.rain === null ? "unknown" : observations.rain.toFixed(2) + " mm"));
                     observations.stations.forEach((amount, index) => {
-                        labelParts.push(this._getStationLabel("station_" + (index + 1) + "_minutes") + ": " + amount.toFixed(2) + " mm");
+                        labelParts.push(this._getStationLabel("station_" + (index + 1) + "_minutes") + ": " + (amount === null ? "unknown" : amount.toFixed(2) + " mm"));
                     });
                 } else if (!entry.isPast) {
                     if (irrigationIcon) labelParts.push("Projected watering: " + projection.hours.join(", "));
