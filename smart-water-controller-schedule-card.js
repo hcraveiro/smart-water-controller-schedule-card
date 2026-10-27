@@ -1017,10 +1017,13 @@ class IrrigationScheduleCard extends HTMLElement {
         const now = new Date();
 
         if (this._config?.calendar_history === true) {
-            const previousMonth = (now.getMonth() + 11) % 12;
-            if (monthIndex === previousMonth) {
-                return now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+            // Current month and the next three months are forecasts.
+            // All other months represent the most recent occurrence in the past.
+            const ahead = (monthIndex - now.getMonth() + 12) % 12;
+            if (ahead <= 3) {
+                return monthIndex < now.getMonth() ? now.getFullYear() + 1 : now.getFullYear();
             }
+            return monthIndex > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
         }
         return monthIndex >= now.getMonth() ? now.getFullYear() : now.getFullYear() + 1;
     }
@@ -1294,7 +1297,11 @@ class IrrigationScheduleCard extends HTMLElement {
         const every = `every ${projection.intervalDays} ${projection.intervalDays === 1 ? "day" : "days"}`;
         let note;
 
-        if (!hasTimes) {
+        const monthIsPast = new Date(year, this.currentMonth + 1, 0) <
+            new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        if (this._config?.calendar_history === true && monthIsPast) {
+            note = "Historical rainfall and irrigation are based on recorded sensor values. Days without records are not treated as dry days.";
+        } else if (!hasTimes) {
             note = "No times configured for this month, so no day waters.";
         } else if (!canWater) {
             note =
