@@ -1289,7 +1289,7 @@ class IrrigationScheduleCard extends HTMLElement {
                         ? '<span class="cal-legend-item">💧 rain (observed / ≥ threshold forecast)</span><span class="cal-legend-item">🚿 irrigation (actual / projected)</span>'
                         : '<span class="cal-legend-item"><span class="cal-dot"></span>waters</span>'}
                     <span class="cal-legend-item"><span class="cal-swatch today"></span>today</span>
-                    <span class="cal-legend-item"><span class="cal-swatch past"></span>past, not recorded here</span>
+                    <span class="cal-legend-item"><span class="cal-swatch past"></span>${this._config?.calendar_history === true ? "past: actual recorded values" : "past: not recorded here"}</span>
                 </div>
             </section>
         `;
@@ -1795,7 +1795,10 @@ class IrrigationScheduleCard extends HTMLElement {
                 }
 
                 .cal-cell.past {
-                    opacity: 0.45;
+                    opacity: 0.7;
+                }
+                .cal-cell.past:has(.cal-icons ha-icon) {
+                    opacity: 1;
                 }
 
                 .cal-cell.waters {
@@ -1812,8 +1815,8 @@ class IrrigationScheduleCard extends HTMLElement {
                     text-decoration: line-through;
                 }
 
-                .cal-icons { display: flex; gap: 1px; align-items: center; justify-content: center; }
-                .cal-icons ha-icon { --mdc-icon-size: 13px; width: 13px; height: 13px; }
+                .cal-icons { display: flex; gap: 2px; align-items: center; justify-content: center; height: 18px; flex: 0 0 18px; margin-top: -2px; }
+                .cal-icons ha-icon { --mdc-icon-size: 16px; --iron-icon-height: 16px; --iron-icon-width: 16px; display: block; width: 16px; height: 16px; flex: 0 0 16px; }
                 .cal-rain { color: var(--info-color, #039be5); }
                 .cal-irrigation { color: var(--success-color, #43a047); }
 
