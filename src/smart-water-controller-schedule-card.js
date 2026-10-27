@@ -1063,11 +1063,22 @@ class IrrigationScheduleCard extends HTMLElement {
                                 const at = new Date(item.last_changed || item.last_updated);
                                 const amount = Number(item.state);
                                 if (!ids.includes(entityId) || !Number.isFinite(amount) || amount < 0 || Number.isNaN(at.getTime())) continue;
-                                // Ignore the next day's reset and take the maximum
-                                // recorded amount inside each local calendar day.
+                                // Use the last available state before midnight, not an
+                                // exact 23:59:59 sample (which rarely exists).
                                 const dayKey = this._calendarKey(at.getFullYear(), at.getMonth()) + "-" + String(at.getDate()).padStart(2, "0");
                                 daily[dayKey] ??= {};
-                                daily[dayKey][entityId] = Math.max(daily[dayKey][entityId] ?? 0, amount);
+                                const previous = daily[dayKey][entityId];
+                                if (!previous || at.getTime() >= previous.time) {
+                                    daily[dayKey][entityId] = { amount, time: at.getTime() };
+                                }
+                            }
+                        }
+                        // Daily counters can briefly retain yesterday's total
+                        // until their midnight reset. Use the latest sample of
+                        // the day, not the maximum (which can be yesterday's).
+                        for (const day of Object.values(daily)) {
+                            for (const [id, sample] of Object.entries(day)) {
+                                day[id] = sample.amount;
                             }
                         }
                         this._historyByDay = daily;
