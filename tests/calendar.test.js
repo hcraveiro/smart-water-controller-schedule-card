@@ -364,7 +364,7 @@ test('hourly long-term statistics preserve end-of-day cumulative readings', asyn
   hass.callWS = async (message) => {
     assert.equal(message.type, 'recorder/statistics_during_period');
     assert.equal(message.period, 'hour');
-    assert.deepEqual(message.types, ['state']);
+    assert.equal([...message.types].join(','), 'state');
     return {
       'sensor.daily_rain': [
         { start: Date.parse('2026-06-18T22:00:00Z'), end: Date.parse('2026-06-18T23:00:00Z'), state: 5.83 },
