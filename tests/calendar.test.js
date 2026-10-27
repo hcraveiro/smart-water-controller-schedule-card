@@ -429,3 +429,41 @@ test('January calendar window crosses the year without turning September into a 
   ));
   assert.deepEqual(years, [2027, 2027, 2027, 2026, 2026, 2026, 2026]);
 });
+
+test('enhanced legend uses the same icons as the calendar and omits redundant past note', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({ calendar: true, calendar_history: true }));
+  const legend = card.shadowRoot.querySelector('.cal-legend');
+  assert.match(legend.innerHTML, /mdi:water/);
+  assert.match(legend.innerHTML, /mdi:sprinkler/);
+  assert.doesNotMatch(legend.textContent, /past: actual recorded values/);
+});
+
+test('selecting a past day reveals actual sensor totals and selecting again closes it', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_rain_sensor: 'sensor.daily_rain',
+    calendar_station_sensors: ['sensor.station_1']
+  }));
+  card._historyByDay = { '2026-06-18': {
+    'sensor.daily_rain': 5.83, 'sensor.station_1': 4.2
+  } };
+  atToday('2026-06-19', () => card.render());
+  const getDay = () => cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
+  atToday('2026-06-19', () => getDay().click());
+  assert.match(card.shadowRoot.querySelector('.cal-day-details').textContent, /5.83 mm/);
+  assert.match(card.shadowRoot.querySelector('.cal-day-details').textContent, /4.20 mm/);
+  atToday('2026-06-19', () => getDay().click());
+  assert.equal(card.shadowRoot.querySelector('.cal-day-details'), null);
+});
+
+test('selecting future watering day shows planned station minutes, not historical totals', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({ calendar: true, calendar_history: true }));
+  atToday('2026-06-19', () => {
+    card._selectedCalendarDay = 21;
+    card.render();
+  });
+  const details = card.shadowRoot.querySelector('.cal-day-details');
+  assert.ok(details);
+  assert.match(details.textContent, /planned|scheduled/i);
+  assert.doesNotMatch(details.textContent, /Rainfall:/);
+});
