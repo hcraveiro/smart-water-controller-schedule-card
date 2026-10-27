@@ -277,6 +277,9 @@ class IrrigationScheduleCard extends HTMLElement {
             // yesterday's projection. Only when the calendar is on: otherwise an
             // unrelated change must not redraw the card.
             interval: this._config?.calendar === true ? this._getIntervalContext() : null,
+            live_calendar: this._config?.calendar_history === true
+                ? this._calendarSourceIds().map((id) => [id, this._hass?.states?.[id]?.state ?? null])
+                : null,
             header: Boolean(this._config?.header),
             title: this._getHeaderTitle(),
         });
