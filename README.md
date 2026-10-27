@@ -119,6 +119,43 @@ Only one zone expands at a time; all start collapsed. Start, Stop, Stop All and 
 
 Station entity IDs in the example reflect one RainBird setup. Adapt them to your controller; do not assume the entity IDs are universal.
 
+
+### Experimental calendar rain and irrigation markers
+
+The optional enhanced calendar combines **recorded** daily rain/irrigation for past days with
+**projected** irrigation and daily rain forecasts for future days. These options are off by
+default and currently being tested in PR #7:
+
+```yaml
+calendar: true
+calendar_history: true
+calendar_rain_sensor: sensor.rainbird_total_amount_of_rain_today
+calendar_station_sensors:
+  - sensor.rainbird_sprinkle_total_amount_today_front_lawn
+  - sensor.rainbird_sprinkle_total_amount_today_side_lawn
+  - sensor.exterior_living_room_rainbird_sprinkle_total_amount_today_station_3
+calendar_weather: weather.openweathermap
+calendar_rain_probability: 50
+```
+
+- Past days use Home Assistant hourly long-term statistics (the `state` value at the
+  end of each hour). These can be retained indefinitely, independently of Recorder's
+  raw-history retention. The latest observation before local midnight determines the
+  day's total. Today's amounts come directly from the current sensor states.
+- Sensors without long-term statistics fall back to Recorder's available raw history,
+  for whatever retention that installation uses. Missing readings remain unknown,
+  rather than being interpreted as zero.
+- The weather entity supplies its *daily* forecast through the Home Assistant weather
+  forecast API. Markers require an available precipitation probability at or above
+  the configured percentage. Forecast availability and horizon depend on the provider.
+- Markers are informational only; they do not alter the integration's irrigation
+  decisions. Rain totals from this integration are weather-provider estimates, not
+  measurements from a physical rain gauge.
+- Tap a calendar day to open its detail panel; tap again to close it. Past dates show
+  recorded rain and irrigation per station, while future dates show forecast rain
+  probability (when available) and scheduled watering minutes per station.
+- The simplified legend uses exactly the same rain and sprinkler icons as the grid.
+
 ### Irrigation Schedule
 
 ```yaml

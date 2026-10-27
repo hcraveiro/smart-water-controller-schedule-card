@@ -286,3 +286,197 @@ test('calendar text coming from Home Assistant is shown as text', () => {
   assert.match(note(card), /<img src=x onerror=alert\(1\)>/);
   assert.equal(card.shadowRoot.querySelectorAll('.cal-note img').length, 0);
 });
+
+test('historical calendar uses recorded rain and station amounts instead of projected dots', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true,
+    calendar_history: true,
+    calendar_rain_sensor: 'sensor.daily_rain',
+    calendar_station_sensors: ['sensor.station_1', 'sensor.station_2']
+  }));
+  card._historyByDay = { '2026-06-18': {
+    'sensor.daily_rain': 1.7,
+    'sensor.station_1': 2.1,
+    'sensor.station_2': 0
+  } };
+  atToday('2026-06-19', () => card.render());
+  const day = cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
+  assert.match(day.innerHTML, /mdi:water/);
+  assert.match(day.innerHTML, /mdi:sprinkler/);
+  assert.match(day.title, /Rain: 1.70 mm/);
+  assert.match(day.title, /2.10 mm/);
+  assert.ok(!day.classList.contains('waters'));
+});
+
+test('future weather marker requires probability at the configured threshold', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_weather: 'weather.openweathermap', calendar_rain_probability: 50
+  }));
+  card._dailyForecast = [
+    { datetime: '2026-06-20T12:00:00', precipitation_probability: 49 },
+    { datetime: '2026-06-21T12:00:00', precipitation_probability: 50 }
+  ];
+  atToday('2026-06-19', () => card.render());
+  const byDay = day => cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === day);
+  assert.doesNotMatch(byDay(20).innerHTML, /mdi:water/);
+  assert.match(byDay(21).innerHTML, /mdi:water/);
+  assert.match(byDay(21).title, /50%/);
+});
+
+test('past marker visibility remains disabled by default', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({ calendar: true }));
+  card._historyByDay = { '2026-06-18': { 'sensor.daily_rain': 3 } };
+  card.render();
+  assert.equal(card.shadowRoot.querySelectorAll('.cal-icons').length, 0);
+});
+
+test('historical missing sensor values are explicitly unknown', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_rain_sensor: 'sensor.daily_rain',
+    calendar_station_sensors: ['sensor.station_1']
+  }));
+  card._historyByDay = { '2026-06-18': { 'sensor.station_1': 2.1 } };
+  atToday('2026-06-19', () => card.render());
+  const day = cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
+  assert.match(day.title, /Rain: unknown/);
+  assert.match(day.title, /2.10 mm/);
+  assert.doesNotMatch(day.innerHTML, /mdi:water/);
+});
+
+test('forecast calendar dates are not shifted by timezone offsets', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_weather: 'weather.openweathermap'
+  }));
+  card._dailyForecast = [{ datetime: '2026-06-21T00:00:00+14:00', precipitation_probability: 75 }];
+  atToday('2026-06-19', () => card.render());
+  const byDay = day => cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === day);
+  assert.match(byDay(21).innerHTML, /mdi:water/);
+  assert.doesNotMatch(byDay(20).innerHTML, /mdi:water/);
+});
+
+test('hourly long-term statistics preserve end-of-day cumulative readings', async () => {
+  const { card, hass } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_rain_sensor: 'sensor.daily_rain',
+    calendar_station_sensors: ['sensor.station_1']
+  }));
+  hass.callWS = async (message) => {
+    assert.equal(message.type, 'recorder/statistics_during_period');
+    assert.equal(message.period, 'hour');
+    assert.equal([...message.types].join(','), 'state');
+    return {
+      'sensor.daily_rain': [
+        { start: Date.parse('2026-06-18T22:00:00Z'), end: Date.parse('2026-06-18T23:00:00Z'), state: 5.83 },
+        { start: Date.parse('2026-06-18T23:00:00Z'), end: Date.parse('2026-06-19T00:00:00Z'), state: 5.83 }
+      ],
+      'sensor.station_1': [
+        { start: Date.parse('2026-06-18T23:00:00Z'), end: Date.parse('2026-06-19T00:00:00Z'), state: 4.2 }
+      ]
+    };
+  };
+  card._historyKey = 'fixture-statistics';
+  await atToday('2026-06-19', () => card._readCalendarStatistics(
+    card._calendarSourceIds(),
+    new window.Date(2026, 5, 1),
+    new window.Date(2026, 5, 19),
+    card._historyKey
+  ));
+  assert.equal(card._historyByDay?.['2026-06-18']?.['sensor.daily_rain'], 5.83, JSON.stringify(card._historyByDay));
+  atToday('2026-06-19', () => card.render());
+  const day = cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
+  assert.match(day.title, /5.83 mm/);
+  assert.match(day.title, /4.20 mm/);
+});
+
+test('today uses live sensor values instead of delayed hourly statistics', () => {
+  const { card, hass } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_rain_sensor: 'sensor.daily_rain',
+    calendar_station_sensors: ['sensor.station_1']
+  }));
+  hass.states['sensor.daily_rain'] = { state: '0.7' };
+  hass.states['sensor.station_1'] = { state: '2.1' };
+  const observed = atToday('2026-06-19', () => card._calendarObservations(2026, 5, 19));
+  assert.equal(observed.rain, 0.7);
+  assert.equal(observed.watered, true);
+});
+
+test('calendar history shows the current month, three months forward, and eight months back', () => {
+  const { card } = atToday('2026-10-27', () => makeCard({
+    calendar: true, calendar_history: true
+  }));
+  const years = atToday('2026-10-27', () => Array.from({ length: 12 }, (_, month) => {
+    card.currentMonth = month;
+    return card._getDisplayYear();
+  }));
+  assert.deepEqual(years, [
+    2027, 2026, 2026, 2026, 2026, 2026,
+    2026, 2026, 2026, 2026, 2026, 2026
+  ]);
+  card.currentMonth = 7;
+  atToday('2026-10-27', () => card.render());
+  assert.match(card.shadowRoot.textContent, /Calendar August 2026/);
+  assert.equal(card.shadowRoot.querySelectorAll('.cal-cell.waters').length, 0);
+});
+
+test('January calendar window crosses the year without turning September into a future month', () => {
+  const { card } = atToday('2026-12-15', () => makeCard({
+    calendar: true, calendar_history: true
+  }));
+  const years = atToday('2026-12-15', () => [0, 1, 2, 3, 8, 10, 11].map(month =>
+    card._getDisplayYear(month)
+  ));
+  assert.deepEqual(years, [2027, 2027, 2027, 2026, 2026, 2026, 2026]);
+});
+
+test('enhanced legend uses the same icons as the calendar and omits redundant past note', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({ calendar: true, calendar_history: true }));
+  const legend = card.shadowRoot.querySelector('.cal-legend');
+  assert.match(legend.innerHTML, /mdi:water/);
+  assert.match(legend.innerHTML, /mdi:sprinkler/);
+  assert.doesNotMatch(legend.textContent, /past: actual recorded values/);
+});
+
+test('selecting a past day reveals actual sensor totals and selecting again closes it', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_rain_sensor: 'sensor.daily_rain',
+    calendar_station_sensors: ['sensor.station_1']
+  }));
+  card._historyByDay = { '2026-06-18': {
+    'sensor.daily_rain': 5.83, 'sensor.station_1': 4.2
+  } };
+  atToday('2026-06-19', () => card.render());
+  const getDay = () => cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
+  atToday('2026-06-19', () => getDay().click());
+  assert.match(card.shadowRoot.querySelector('.cal-day-details').textContent, /5.83 mm/);
+  assert.match(card.shadowRoot.querySelector('.cal-day-details').textContent, /4.20 mm/);
+  atToday('2026-06-19', () => getDay().click());
+  assert.equal(card.shadowRoot.querySelector('.cal-day-details'), null);
+});
+
+test('selecting future watering day shows planned station minutes, not historical totals', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({ calendar: true, calendar_history: true }));
+  atToday('2026-06-19', () => {
+    card._selectedCalendarDay = 21;
+    card.render();
+  });
+  const details = card.shadowRoot.querySelector('.cal-day-details');
+  assert.ok(details);
+  assert.match(details.textContent, /planned|scheduled/i);
+  assert.doesNotMatch(details.textContent, /Rainfall:/);
+});
+
+test('calendar day cells have selection state without marking empty cells', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({ calendar: true, calendar_history: true }));
+  atToday('2026-06-19', () => {
+    card._selectedCalendarDay = 18;
+    card.render();
+  });
+  const chosen = cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
+  assert.ok(chosen.classList.contains('selected'));
+  assert.ok(!chosen.classList.contains('today'));
+  assert.ok(card.shadowRoot.querySelector('.cal-cell.today'));
+  assert.equal(card.shadowRoot.querySelectorAll('.cal-cell.empty.selected').length, 0);
+});
