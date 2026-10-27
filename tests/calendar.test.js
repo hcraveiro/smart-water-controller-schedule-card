@@ -382,6 +382,7 @@ test('hourly long-term statistics preserve end-of-day cumulative readings', asyn
     new window.Date(2026, 5, 19),
     card._historyKey
   ));
+  assert.equal(card._historyByDay?.['2026-06-18']?.['sensor.daily_rain'], 5.83, JSON.stringify(card._historyByDay));
   atToday('2026-06-19', () => card.render());
   const day = cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
   assert.match(day.title, /5.83 mm/);
