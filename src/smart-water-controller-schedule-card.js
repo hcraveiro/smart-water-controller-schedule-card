@@ -1174,9 +1174,17 @@ class IrrigationScheduleCard extends HTMLElement {
                 const showHistorical = this._config?.calendar_history === true && entry.isPast;
                 const irrigationIcon = showHistorical ? observations.watered : (!entry.isPast && entry.waters);
                 const rainIcon = showHistorical ? observations.rain > 0 : observations.forecastRain;
-                const label = entry.waters
-                    ? `${entry.day}: ${projection.hours.join(", ")}`
-                    : String(entry.day);
+                const labelParts = [String(entry.day)];
+                if (showHistorical && observations.known) {
+                    labelParts.push("Rain: " + observations.rain.toFixed(2) + " mm");
+                    observations.stations.forEach((amount, index) => {
+                        labelParts.push(this._getStationLabel("station_" + (index + 1) + "_minutes") + ": " + amount.toFixed(2) + " mm");
+                    });
+                } else if (!entry.isPast) {
+                    if (irrigationIcon) labelParts.push("Projected watering: " + projection.hours.join(", "));
+                    if (rainIcon) labelParts.push("Rain probability: " + observations.probability + "%");
+                }
+                const label = labelParts.join(" | ");
 
                 return `
                     <div class="${classes.join(" ")}" title="${escapeAttribute(label)}">
