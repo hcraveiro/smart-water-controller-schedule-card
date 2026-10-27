@@ -375,6 +375,7 @@ test('hourly long-term statistics preserve end-of-day cumulative readings', asyn
       ]
     };
   };
+  card._historyKey = 'fixture-statistics';
   await atToday('2026-06-19', () => card._readCalendarStatistics(
     card._calendarSourceIds(),
     new window.Date(2026, 5, 1),
