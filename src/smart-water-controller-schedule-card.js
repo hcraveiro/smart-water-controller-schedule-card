@@ -165,6 +165,13 @@ class IrrigationScheduleCard extends HTMLElement {
             this._selectedCalendarDay = this._selectedCalendarDay === day ? null : day;
             this.render();
         });
+        this.shadowRoot.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            const cell = event.target.closest?.(".cal-cell[data-day]");
+            if (!cell) return;
+            event.preventDefault();
+            cell.click();
+        });
         this.shadowRoot.addEventListener("focusout", () => {
             window.setTimeout(() => {
                 if (!this._hasActiveEditor() && this._pendingEntitySync && !this._isDirty) {
