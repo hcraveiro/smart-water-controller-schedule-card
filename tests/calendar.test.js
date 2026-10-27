@@ -299,7 +299,7 @@ test('historical calendar uses recorded rain and station amounts instead of proj
     'sensor.station_1': 2.1,
     'sensor.station_2': 0
   } };
-  card.render();
+  atToday('2026-06-19', () => card.render());
   const day = cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
   assert.match(day.innerHTML, /mdi:water/);
   assert.match(day.innerHTML, /mdi:sprinkler/);
@@ -316,7 +316,7 @@ test('future weather marker requires probability at the configured threshold', (
     { datetime: '2026-06-20T12:00:00', precipitation_probability: 49 },
     { datetime: '2026-06-21T12:00:00', precipitation_probability: 50 }
   ];
-  card.render();
+  atToday('2026-06-19', () => card.render());
   const byDay = day => cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === day);
   assert.doesNotMatch(byDay(20).innerHTML, /mdi:water/);
   assert.match(byDay(21).innerHTML, /mdi:water/);
