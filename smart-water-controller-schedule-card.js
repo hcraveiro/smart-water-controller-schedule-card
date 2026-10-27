@@ -151,6 +151,11 @@ class IrrigationScheduleCard extends HTMLElement {
         this._pendingEntitySync = false;
         this._externalChangePending = false;
         this._copyConfirm = null;
+        this._historyKey = null;
+        this._historyByDay = null;
+        this._forecastKey = null;
+        this._unsubscribeForecast = null;
+        this._dailyForecast = null;
 
         this.shadowRoot.addEventListener("focusout", () => {
             window.setTimeout(() => {
@@ -167,7 +172,9 @@ class IrrigationScheduleCard extends HTMLElement {
             throw new Error("You need to define a sensor in config.");
         }
 
+        this._unsubscribeCalendarForecast();
         this._config = config;
+        this._historyKey = null;
         this.sensor = config.sensor;
         this._entitySignature = null;
         this._pendingEntitySync = false;
@@ -181,6 +188,7 @@ class IrrigationScheduleCard extends HTMLElement {
 
     set hass(hass) {
         this._hass = hass;
+        this._loadCalendarData();
 
         if (!this.sensor) {
             this.render();
@@ -1003,11 +1011,145 @@ class IrrigationScheduleCard extends HTMLElement {
     _getDisplayYear(monthIndex = this.currentMonth) {
         const now = new Date();
 
+        if (this._config?.calendar_history === true) {
+            const previousMonth = (now.getMonth() + 11) % 12;
+            if (monthIndex === previousMonth) {
+                return now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+            }
+        }
         return monthIndex >= now.getMonth() ? now.getFullYear() : now.getFullYear() + 1;
     }
 
     _getFirstWeekday() {
         return this._hass?.locale?.first_weekday === "sunday" ? 0 : 1;
+    }
+
+
+    _calendarSourceIds() {
+        const stations = Array.isArray(this._config?.calendar_station_sensors)
+            ? this._config.calendar_station_sensors.filter((id) => typeof id === "string" && id.startsWith("sensor."))
+            : [];
+        const rain = this._config?.calendar_rain_sensor;
+        return [...new Set([...stations, ...(typeof rain === "string" && rain.startsWith("sensor.") ? [rain] : [])])];
+    }
+
+    _calendarKey(year, month) {
+        return String(year) + "-" + String(month + 1).padStart(2, "0");
+    }
+
+    _loadCalendarData() {
+        if (!this._hass || this._config?.calendar !== true) return;
+        const enabledHistory = this._config?.calendar_history === true;
+        const ids = this._calendarSourceIds();
+        const today = new Date();
+        const year = this._getDisplayYear();
+        const month = this.currentMonth;
+        const key = this._calendarKey(year, month);
+        if (enabledHistory && ids.length && typeof this._hass.callApi === "function" && new Date(year, month, 1) <= today) {
+            const historyKey = key + "|" + ids.join(",");
+            if (this._historyKey !== historyKey) {
+                this._historyKey = historyKey;
+                this._historyByDay = null;
+                const from = new Date(Math.max(new Date(year, month, 1).getTime(), new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30).getTime()));
+                const to = new Date(Math.min(new Date(year, month + 1, 1).getTime(), new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).getTime()));
+                this._hass.callApi("GET", "history/period/" + encodeURIComponent(from.toISOString()) +
+                    "?end_time=" + encodeURIComponent(to.toISOString()) +
+                    "&filter_entity_id=" + encodeURIComponent(ids.join(",")) + "&minimal_response")
+                    .then((records) => {
+                        if (this._historyKey !== historyKey) return;
+                        const daily = {};
+                        for (const series of Array.isArray(records) ? records : []) {
+                            for (const item of series) {
+                                const entityId = item.entity_id || series[0]?.entity_id;
+                                const at = new Date(item.last_changed || item.last_updated);
+                                const amount = Number(item.state);
+                                if (!ids.includes(entityId) || !Number.isFinite(amount) || amount < 0 || Number.isNaN(at.getTime())) continue;
+                                // Use the last available state before midnight, not an
+                                // exact 23:59:59 sample (which rarely exists).
+                                const dayKey = this._calendarKey(at.getFullYear(), at.getMonth()) + "-" + String(at.getDate()).padStart(2, "0");
+                                daily[dayKey] ??= {};
+                                const previous = daily[dayKey][entityId];
+                                if (!previous || at.getTime() >= previous.time) {
+                                    daily[dayKey][entityId] = { amount, time: at.getTime() };
+                                }
+                            }
+                        }
+                        // Daily counters can briefly retain yesterday's total
+                        // until their midnight reset. Use the latest sample of
+                        // the day, not the maximum (which can be yesterday's).
+                        for (const day of Object.values(daily)) {
+                            for (const [id, sample] of Object.entries(day)) {
+                                day[id] = sample.amount;
+                            }
+                        }
+                        this._historyByDay = daily;
+                        this.render();
+                    }).catch(() => {
+                        if (this._historyKey === historyKey) {
+                            this._historyByDay = {};
+                            this.render();
+                        }
+                    });
+            }
+        }
+        const weatherId = this._config?.calendar_weather;
+        if (typeof weatherId === "string" && weatherId.startsWith("weather.")
+            && typeof this._hass.connection?.subscribeMessage === "function") {
+            if (this._forecastKey !== weatherId) {
+                this._unsubscribeCalendarForecast();
+                this._forecastKey = weatherId;
+                this._dailyForecast = null;
+                const requestKey = weatherId;
+                this._hass.connection.subscribeMessage((event) => {
+                    if (this._forecastKey !== requestKey) return;
+                    this._dailyForecast = Array.isArray(event?.forecast) ? event.forecast : [];
+                    this.render();
+                }, { type: "weather/subscribe_forecast", entity_id: weatherId, forecast_type: "daily" })
+                    .then((unsubscribe) => {
+                        if (this._forecastKey === requestKey) this._unsubscribeForecast = unsubscribe;
+                        else unsubscribe();
+                    })
+                    .catch(() => {
+                        if (this._forecastKey === requestKey) this._dailyForecast = [];
+                    });
+            }
+        } else if (this._forecastKey) {
+            this._unsubscribeCalendarForecast();
+        }
+    }
+
+    _unsubscribeCalendarForecast() {
+        if (typeof this._unsubscribeForecast === "function") {
+            this._unsubscribeForecast();
+            this._unsubscribeForecast = null;
+        }
+        this._forecastKey = null;
+    }
+
+    disconnectedCallback() {
+        this._unsubscribeCalendarForecast();
+    }
+
+    _calendarObservations(year, month, day) {
+        const dateKey = this._calendarKey(year, month) + "-" + String(day).padStart(2, "0");
+        const amounts = this._historyByDay?.[dateKey] ?? {};
+        const rain = Number(amounts[this._config?.calendar_rain_sensor] ?? 0);
+        const configuredStations = Array.isArray(this._config?.calendar_station_sensors)
+            ? this._config.calendar_station_sensors : [];
+        const stations = configuredStations.map((id) => Number(amounts[id] ?? 0));
+        const watered = stations.some((amount) => amount > 0);
+        const today = new Date();
+        const date = new Date(year, month, day);
+        const past = date < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const probabilityThreshold = Number(this._config?.calendar_rain_probability ?? 50);
+        const daily = (this._dailyForecast ?? []).find((row) => {
+            const at = new Date(row.datetime || row.datetime_iso || row.date);
+            return !Number.isNaN(at.getTime()) && at.getFullYear() === year && at.getMonth() === month && at.getDate() === day;
+        });
+        const probability = Number(daily?.precipitation_probability);
+        const forecastRain = !past && daily && Number.isFinite(probability)
+            && probability >= (Number.isFinite(probabilityThreshold) ? probabilityThreshold : 50);
+        return { rain, watered, stations, forecastRain, probability, past, known: Boolean(this._historyByDay?.[dateKey]) };
     }
 
     _renderCalendar(monthSchedule) {
@@ -1046,7 +1188,7 @@ class IrrigationScheduleCard extends HTMLElement {
             ...projection.days.map((entry) => {
                 const classes = ["cal-cell"];
 
-                if (entry.waters) {
+                if (entry.waters && !(this._config?.calendar_history === true && entry.isPast)) {
                     classes.push("waters");
                 }
                 if (entry.isToday) {
@@ -1059,14 +1201,31 @@ class IrrigationScheduleCard extends HTMLElement {
                     classes.push("past");
                 }
 
-                const label = entry.waters
-                    ? `${entry.day}: ${projection.hours.join(", ")}`
-                    : String(entry.day);
+                const observations = this._calendarObservations(year, this.currentMonth, entry.day);
+                const showHistorical = this._config?.calendar_history === true && entry.isPast;
+                const irrigationIcon = showHistorical ? observations.watered : (!entry.isPast && entry.waters);
+                const rainIcon = showHistorical ? observations.rain > 0 : observations.forecastRain;
+                const labelParts = [String(entry.day)];
+                if (showHistorical && observations.known) {
+                    labelParts.push("Rain: " + observations.rain.toFixed(2) + " mm");
+                    observations.stations.forEach((amount, index) => {
+                        labelParts.push(this._getStationLabel("station_" + (index + 1) + "_minutes") + ": " + amount.toFixed(2) + " mm");
+                    });
+                } else if (!entry.isPast) {
+                    if (irrigationIcon) labelParts.push("Projected watering: " + projection.hours.join(", "));
+                    if (rainIcon) labelParts.push("Rain probability: " + observations.probability + "%");
+                }
+                const label = labelParts.join(" | ");
 
                 return `
                     <div class="${classes.join(" ")}" title="${escapeAttribute(label)}">
                         <span class="cal-day">${entry.day}</span>
-                        ${entry.waters ? '<span class="cal-dot"></span>' : ""}
+                        ${(this._config?.calendar_history || this._config?.calendar_weather) ?
+                            '<span class="cal-icons">' +
+                                (rainIcon ? '<ha-icon icon="mdi:water" class="cal-rain"></ha-icon>' : '') +
+                                (irrigationIcon ? '<ha-icon icon="mdi:sprinkler" class="cal-irrigation"></ha-icon>' : '') +
+                            '</span>' :
+                            (entry.waters ? '<span class="cal-dot"></span>' : '')}
                     </div>
                 `;
             }),
@@ -1117,7 +1276,9 @@ class IrrigationScheduleCard extends HTMLElement {
                 </div>
 
                 <div class="cal-legend">
-                    <span class="cal-legend-item"><span class="cal-dot"></span>waters</span>
+                    ${(this._config?.calendar_history || this._config?.calendar_weather)
+                        ? '<span class="cal-legend-item">💧 rain (observed / ≥ threshold forecast)</span><span class="cal-legend-item">🚿 irrigation (actual / projected)</span>'
+                        : '<span class="cal-legend-item"><span class="cal-dot"></span>waters</span>'}
                     <span class="cal-legend-item"><span class="cal-swatch today"></span>today</span>
                     <span class="cal-legend-item"><span class="cal-swatch past"></span>past, not recorded here</span>
                 </div>
@@ -1641,6 +1802,11 @@ class IrrigationScheduleCard extends HTMLElement {
                 .cal-cell.blocked .cal-day {
                     text-decoration: line-through;
                 }
+
+                .cal-icons { display: flex; gap: 1px; align-items: center; justify-content: center; }
+                .cal-icons ha-icon { --mdc-icon-size: 13px; width: 13px; height: 13px; }
+                .cal-rain { color: var(--info-color, #039be5); }
+                .cal-irrigation { color: var(--success-color, #43a047); }
 
                 .cal-dot {
                     width: 6px;
