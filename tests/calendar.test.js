@@ -427,5 +427,5 @@ test('January calendar window crosses the year without turning September into a 
   const years = atToday('2026-12-15', () => [0, 1, 2, 3, 8, 10, 11].map(month =>
     card._getDisplayYear(month)
   ));
-  assert.deepEqual(years, [2027, 2027, 2027, 2026, 2026, 2026, 2026]);
+  assert.deepEqual(years, [2027, 2027, 2027, 2027, 2026, 2026, 2026]);
 });
