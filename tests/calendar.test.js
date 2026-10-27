@@ -467,3 +467,16 @@ test('selecting future watering day shows planned station minutes, not historica
   assert.match(details.textContent, /planned|scheduled/i);
   assert.doesNotMatch(details.textContent, /Rainfall:/);
 });
+
+test('calendar day cells have selection state without marking empty cells', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({ calendar: true, calendar_history: true }));
+  atToday('2026-06-19', () => {
+    card._selectedCalendarDay = 18;
+    card.render();
+  });
+  const chosen = cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
+  assert.ok(chosen.classList.contains('selected'));
+  assert.ok(!chosen.classList.contains('today'));
+  assert.ok(card.shadowRoot.querySelector('.cal-cell.today'));
+  assert.equal(card.shadowRoot.querySelectorAll('.cal-cell.empty.selected').length, 0);
+});
