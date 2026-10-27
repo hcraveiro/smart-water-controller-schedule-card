@@ -1044,7 +1044,7 @@ class IrrigationScheduleCard extends HTMLElement {
         const year = this._getDisplayYear();
         const month = this.currentMonth;
         const key = this._calendarKey(year, month);
-        if (enabledHistory && ids.length && new Date(year, month, 1) <= today) {
+        if (enabledHistory && ids.length && typeof this._hass.callApi === "function" && new Date(year, month, 1) <= today) {
             const historyKey = key + "|" + ids.join(",");
             if (this._historyKey !== historyKey) {
                 this._historyKey = historyKey;
@@ -1081,7 +1081,7 @@ class IrrigationScheduleCard extends HTMLElement {
             }
         }
         const weatherId = this._config?.calendar_weather;
-        if (typeof weatherId === "string" && weatherId.startsWith("weather.")) {
+        if (typeof weatherId === "string" && weatherId.startsWith("weather.") && typeof this._hass.callWS === "function") {
             const forecastKey = weatherId + "|" + new Date().toDateString();
             if (this._forecastKey !== forecastKey) {
                 this._forecastKey = forecastKey;
