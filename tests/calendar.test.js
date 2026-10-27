@@ -286,3 +286,46 @@ test('calendar text coming from Home Assistant is shown as text', () => {
   assert.match(note(card), /<img src=x onerror=alert\(1\)>/);
   assert.equal(card.shadowRoot.querySelectorAll('.cal-note img').length, 0);
 });
+
+test('historical calendar uses recorded rain and station amounts instead of projected dots', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true,
+    calendar_history: true,
+    calendar_rain_sensor: 'sensor.daily_rain',
+    calendar_station_sensors: ['sensor.station_1', 'sensor.station_2']
+  }));
+  card._historyByDay = { '2026-06-18': {
+    'sensor.daily_rain': 1.7,
+    'sensor.station_1': 2.1,
+    'sensor.station_2': 0
+  } };
+  card.render();
+  const day = cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
+  assert.match(day.innerHTML, /mdi:water/);
+  assert.match(day.innerHTML, /mdi:sprinkler/);
+  assert.match(day.title, /Rain: 1.70 mm/);
+  assert.match(day.title, /2.10 mm/);
+  assert.ok(!day.classList.contains('waters'));
+});
+
+test('future weather marker requires probability at the configured threshold', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_weather: 'weather.openweathermap', calendar_rain_probability: 50
+  }));
+  card._dailyForecast = [
+    { datetime: '2026-06-20T12:00:00', precipitation_probability: 49 },
+    { datetime: '2026-06-21T12:00:00', precipitation_probability: 50 }
+  ];
+  card.render();
+  const byDay = day => cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === day);
+  assert.doesNotMatch(byDay(20).innerHTML, /mdi:water/);
+  assert.match(byDay(21).innerHTML, /mdi:water/);
+  assert.match(byDay(21).title, /50%/);
+});
+
+test('past marker visibility remains disabled by default', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({ calendar: true }));
+  card._historyByDay = { '2026-06-18': { 'sensor.daily_rain': 3 } };
+  card.render();
+  assert.equal(card.shadowRoot.querySelectorAll('.cal-icons').length, 0);
+});
