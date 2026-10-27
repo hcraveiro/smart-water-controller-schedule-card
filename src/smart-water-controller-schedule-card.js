@@ -1309,6 +1309,9 @@ class IrrigationScheduleCard extends HTMLElement {
                 if (entry.waters && !(this._config?.calendar_history === true && (entry.isPast || entry.isToday))) {
                     classes.push("waters");
                 }
+                if (this._selectedCalendarDay === entry.day) {
+                    classes.push("selected");
+                }
                 if (entry.isToday) {
                     classes.push("today");
                 }
@@ -1898,6 +1901,7 @@ class IrrigationScheduleCard extends HTMLElement {
                     justify-content: center;
                     gap: 2px;
                     border-radius: 8px;
+                    border: 1px solid color-mix(in srgb, var(--primary-text-color) 22%, transparent);
                     font-size: 13px;
                     background: var(--secondary-background-color);
                     color: var(--primary-text-color);
@@ -1905,6 +1909,7 @@ class IrrigationScheduleCard extends HTMLElement {
 
                 .cal-cell.empty {
                     background: none;
+                    border: none;
                 }
 
                 .cal-cell.past {
@@ -1919,6 +1924,10 @@ class IrrigationScheduleCard extends HTMLElement {
                     font-weight: 500;
                 }
 
+                .cal-cell.selected {
+                    border-color: var(--primary-color);
+                    background: color-mix(in srgb, var(--primary-color) 12%, var(--secondary-background-color));
+                }
                 .cal-cell.today {
                     outline: 2px solid var(--primary-color);
                     outline-offset: -2px;
@@ -1942,7 +1951,8 @@ class IrrigationScheduleCard extends HTMLElement {
 
                 .cal-day-details { padding: 10px 12px; margin-top: 12px; border-radius: 8px; background: var(--secondary-background-color); font-size: 12px; line-height: 1.7; }
                 .cal-day-details strong { display: block; font-size: 13px; margin-bottom: 4px; }
-                .cal-cell[data-day] { cursor: pointer; }
+                .cal-cell[data-day] { cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease; }
+                .cal-cell[data-day]:active { border-color: var(--primary-color); }
                 .cal-cell[data-day]:focus-visible { outline: 2px solid var(--primary-color); }
                 .cal-legend ha-icon { --mdc-icon-size: 16px; width: 16px; height: 16px; }
                 .cal-legend {
