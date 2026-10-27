@@ -139,8 +139,8 @@ calendar_rain_probability: 50
 ```
 
 - Past-day totals come from Home Assistant Recorder history. The card reads each daily
-  accumulator and uses the largest recorded amount within the local day, so a reset at
-  midnight does not replace the previous day's irrigation or rainfall reading.
+  accumulator and uses the last recorded reading within the local day, immediately before the next
+  midnight reset when available.
 - Historical data is limited by your Home Assistant Recorder retention, typically 30
   days in this setup. Days without Recorder data must not be interpreted as dry days.
 - The weather entity supplies its *daily* forecast through the Home Assistant weather
