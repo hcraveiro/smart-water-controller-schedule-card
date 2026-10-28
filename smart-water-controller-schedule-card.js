@@ -1927,6 +1927,16 @@ class IrrigationScheduleCard extends HTMLElement {
                 .cal-cell.selected {
                     background: color-mix(in srgb, var(--primary-text-color) 17%, var(--secondary-background-color));
                 }
+                .cal-cell.selected {
+                    animation: selected-day-glow 2.8s ease-in-out infinite;
+                }
+                @keyframes selected-day-glow {
+                    0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-text-color) 8%, transparent), 0 0 3px color-mix(in srgb, var(--primary-text-color) 8%, transparent); }
+                    50% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-text-color) 24%, transparent), 0 0 12px 2px color-mix(in srgb, var(--primary-text-color) 20%, transparent); }
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .cal-cell.selected { animation: none; box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-text-color) 22%, transparent); }
+                }
                 .cal-cell.today {
                     outline: 2px solid var(--primary-color);
                     outline-offset: -2px;
