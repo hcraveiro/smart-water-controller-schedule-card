@@ -8,7 +8,8 @@ const selected = source.split('.cal-cell.selected {')[1]?.split('}')[0] || '';
 const today = source.split('.cal-cell.today {')[1]?.split('}')[0] || '';
 const legend = source.split('.cal-swatch.today {')[1]?.split('}')[0] || '';
 test('selected uses a filled background, not today border', () => {
-  assert.ok(selected.includes('background: color-mix('));
+  assert.ok(selected.includes('background: color-mix(in srgb, var(--primary-text-color) 17%'));
+  assert.ok(!selected.includes('var(--primary-color)'));
   assert.ok(!selected.includes('border-color'));
   assert.ok(!selected.includes('outline:'));
 });
