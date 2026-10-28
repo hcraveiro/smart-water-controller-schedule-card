@@ -115,6 +115,44 @@ zones:
     valve: switch.rain_bird_sprinkler_3
 ```
 
+### Multiple controllers in one Zones Card
+
+Zones from different integration entries may be displayed together. Assign a
+`controller` identifier to each zone and override `duration`, `end_time`,
+`stop`, and `connection_switches` when they differ from the card defaults.
+Independent controllers may irrigate simultaneously; one controller's active zone
+does not disable another controller's Start button.
+
+```yaml
+type: custom:irrigation-zones-card
+show_global_stop: false
+zones:
+  - name: Front Lawn 1
+    controller: rainbird
+    status: sensor.rainbird_front_lawn_status_1
+    today: sensor.rainbird_sprinkle_total_amount_today_front_lawn
+    planned: sensor.rainbird_forecasted_sprinkle_today_front_lawn
+    remaining: sensor.rainbird_remaining_sprinkle_today_front_lawn
+    start: button.rainbird_sprinkle_front_lawn_1
+  # Include other Rain Bird zones as usual, with controller: rainbird.
+  - name: Bushes
+    controller: solem_bushes
+    status: sensor.solem_bushes_bushes_status
+    today: sensor.solem_bushes_sprinkle_total_amount_today_bushes
+    planned: sensor.solem_bushes_forecasted_sprinkle_today_bushes
+    remaining: sensor.solem_bushes_remaining_sprinkle_today_bushes
+    start: button.solem_bushes_sprinkle_bushes
+    stop: button.solem_bushes_stop_sprinkle
+    duration: number.solem_bushes_irrigation_manual_duration
+    end_time: sensor.solem_bushes_irrigation_end_time
+    connection_switches: []
+```
+
+The card's Stop All button is hidden when multiple controllers are configured,
+to avoid silently stopping only one of them. Each expanded zone still has its
+own Stop button. Configurations without per-zone overrides continue to use
+the existing single-controller defaults.
+
 Only one zone expands at a time; all start collapsed. Start, Stop, Stop All and duration adjustments are disabled if **any** entity in `connection_switches` is `unavailable` or `unknown`. These controls use the integration's switch states, not the external connection-loss helper. Start and Stop issue real Home Assistant service calls.
 
 Station entity IDs in the example reflect one RainBird setup. Adapt them to your controller; do not assume the entity IDs are universal.
