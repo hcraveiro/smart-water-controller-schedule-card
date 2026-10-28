@@ -42,7 +42,7 @@ test('mixed controllers use different duration entities and stop targets', async
     assert.equal(f.card.duration(f.card.config.zones[1]),10);
     f.states['sensor.rb_status'].state='Sprinkling';
     assert.doesNotThrow(()=>f.card.start(f.card.config.zones[1]));
-    await Promise.resolve();
+    await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(f.calls.at(-1)?.data.entity_id,'button.bushes_start');
     await f.card.stop('Bushes',f.card.config.zones[1]);
     assert.equal(f.calls.at(-1)?.data.entity_id,'button.bushes_stop');
