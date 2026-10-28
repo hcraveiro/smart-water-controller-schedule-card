@@ -41,6 +41,22 @@ test('multi-controller overview shows earliest next, latest last and two separat
   } finally {dom.window.close();}
 });
 
+test('controller sections are collapsed by default and expand independently',()=>{
+  const {dom,card}=fixture();
+  try {
+    const headers=card.shadowRoot.querySelectorAll('[data-controller-toggle]');
+    assert.equal(headers.length,2);
+    assert.equal(card.shadowRoot.querySelectorAll('.controller-section .overview-grid').length,0);
+    headers[0].click();
+    assert.equal(card.shadowRoot.querySelectorAll('.controller-section .overview-grid').length,1);
+    assert.equal(card.shadowRoot.querySelectorAll('[aria-expanded="true"]').length,1);
+    card.shadowRoot.querySelectorAll('[data-controller-toggle]')[1].click();
+    assert.equal(card.shadowRoot.querySelectorAll('.controller-section .overview-grid').length,2);
+    card.shadowRoot.querySelectorAll('[data-controller-toggle]')[0].click();
+    assert.equal(card.shadowRoot.querySelectorAll('.controller-section .overview-grid').length,1);
+  } finally {dom.window.close();}
+});
+
 test('unavailable controller is not counted as Off',()=>{
   const {dom,card,states}=fixture();
   try {
