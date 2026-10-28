@@ -73,7 +73,7 @@ test('simultaneous irrigation renders independent countdowns',()=>{
     states['sensor.rb_zone']={state:'Sprinkling'};
     states['sensor.solem_zone']={state:'Sprinkling'};
     card.hass={states};
-    assert.match(card.shadowRoot.innerHTML,/2 controllers irrigating/);
+    assert.match(card.shadowRoot.innerHTML,/Irrigation running/);
     assert.equal(card.shadowRoot.querySelectorAll('[data-live-controller]').length,2);
   } finally {dom.window.close();}
 });
