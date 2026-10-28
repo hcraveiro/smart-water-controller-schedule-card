@@ -35,7 +35,7 @@ This card defaults to RainBird-specific entities. Override the entity IDs in the
 
 Use `controllers` only with `mode: overview`. The card displays a global
 earliest upcoming irrigation, latest completed irrigation, combined controller
-states, and a collapsible section for each controller (collapsed by default). Unknown or unavailable
+states, and a collapsible section for each controller (expanded by default). Unknown or unavailable
 states are never counted as Off. A controller can irrigate simultaneously
 with another controller; each active section shows its own countdown.
 The Weather mode remains unchanged.
