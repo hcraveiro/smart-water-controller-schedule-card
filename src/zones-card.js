@@ -195,7 +195,8 @@ class IrrigationZonesCard extends HTMLElement {
     }).join('');
     const globalStop = !multiController && this.config.show_global_stop && active
       ? `<div class="global"><span><ha-icon icon="mdi:water"></ha-icon> Irrigating: ${this.esc(active.name)}</span><button data-stop-all ${this.busy || disconnected?'disabled':''}><ha-icon icon="mdi:stop-circle-outline"></ha-icon>Stop All</button></div>` : '';
-    const connectionWarning = !multiController && this.connectionLost()
+    const disconnected = this.connectionLost();
+    const connectionWarning = !multiController && disconnected
       ? `<div class="connection-warning"><ha-icon icon="mdi:wifi-off"></ha-icon><span>Controller unavailable — irrigation controls disabled</span></div>`
       : '';
     this.shadowRoot.innerHTML = `<style>
