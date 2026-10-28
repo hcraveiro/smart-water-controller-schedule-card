@@ -31,6 +31,46 @@ mode: overview
 
 This card defaults to RainBird-specific entities. Override the entity IDs in the card configuration for a different Smart Water Controller installation. The overview connection banner uses integration switch availability, independently of external automations or helpers.
 
+### Multi-controller Overview (optional)
+
+Use `controllers` only with `mode: overview`. The card displays a global
+earliest upcoming irrigation, latest completed irrigation, combined controller
+states, and a separate section for each controller. Unknown or unavailable
+states are never counted as Off. A controller can irrigate simultaneously
+with another controller; each active section shows its own countdown.
+The Weather mode remains unchanged.
+
+```yaml
+type: custom:irrigation-summary-card
+mode: overview
+controllers:
+  - name: Rain Bird
+    controller: sensor.rainbird_controller_status
+    station: sensor.rainbird_current_irrigation_station
+    next: sensor.rainbird_next_schedule
+    last: sensor.rainbird_last_sprinkle
+    end: sensor.rainbird_irrigation_end_time
+    zone_statuses:
+      - sensor.rainbird_front_lawn_status_1
+      - sensor.rainbird_front_lawn_status_2
+      - sensor.rainbird_side_lawn_status
+    connection_switches:
+      - switch.rain_bird_sprinkler_1
+      - switch.rain_bird_sprinkler_2
+      - switch.rain_bird_sprinkler_3
+  - name: Solem Bushes
+    controller: sensor.solem_bushes_controller_status
+    station: sensor.solem_bushes_current_irrigation_station
+    next: sensor.solem_bushes_next_schedule
+    last: sensor.solem_bushes_last_sprinkle
+    end: sensor.solem_bushes_irrigation_end_time
+    zone_statuses:
+      - sensor.solem_bushes_bushes_status
+    connection_switches: []
+```
+
+Existing single-controller YAML is unchanged.
+
 ### Explicit entity mapping (recommended)
 
 The Overview and Weather modes support configuring all entity IDs directly. This is especially useful when the controller integration is recreated and entity names change.
