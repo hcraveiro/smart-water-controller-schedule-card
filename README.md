@@ -95,6 +95,27 @@ connection_switches:
 
 The card displays **Connection lost** if *any* configured switch is `unknown`, `unavailable` or missing. It does **not** use `input_boolean.rainbird_connection_lost`; that external helper may remain in unrelated automations. Defaults are retained for existing YAML configurations. Update the IDs after recreating an integration entry if Home Assistant assigned new ones.
 
+To show **separate cumulative water consumption values** for multiple controllers,
+use the optional `water_sensors` array in Weather mode. Each item needs a
+display `name` and an `entity`. When omitted, the existing single `water`
+sensor remains in use.
+
+```yaml
+type: custom:irrigation-summary-card
+mode: weather
+raining: binary_sensor.rainbird_is_it_raining_now
+rain_forecast: binary_sensor.rainbird_will_it_rain_today
+rain_today: sensor.rainbird_total_amount_of_rain_today
+forecast_today: sensor.rainbird_total_forecasted_rain_today
+rain_duration: sensor.rainbird_rain_time_today
+last_rain: sensor.rainbird_last_rain
+water_sensors:
+  - name: Rain Bird
+    entity: sensor.rainbird_total_water_consumption
+  - name: Solem Bushes
+    entity: sensor.solem_bushes_total_water_consumption
+```
+
 Weather entity mapping:
 
 ```yaml
