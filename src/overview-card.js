@@ -183,7 +183,7 @@ class IrrigationSummaryCard extends HTMLElement {
       const mode = c.connectionLost || !c.available ? 'error' : c.active ? 'active' : c.controller.toLowerCase() === 'on' ? 'ready' : 'off';
       const expanded = !this._expandedControllers.has(index);
       return `<section class="controller-section">
-        <button class="controller-heading" data-controller-toggle="${index}" aria-expanded="${expanded}"><strong>${this.escape(c.name || `Controller ${index+1}`)}</strong><span class="controller-state ${mode}">${this.escape(c.available ? c.controller : 'Unavailable')}</span><ha-icon icon="mdi:chevron-${expanded ? 'up' : 'down'}"></ha-icon></button>
+        <button class="controller-heading" data-controller-toggle="${index}" aria-expanded="${expanded}"><strong>${this.escape(c.name || `Controller ${index+1}`)}</strong><span class="controller-state ${mode}">${this.escape(c.available ? c.controller : 'Unavailable')}</span><ha-icon class="chevron" icon="mdi:chevron-${expanded ? 'up' : 'down'}"></ha-icon></button>
         ${expanded ? `<div class="overview-grid">
           ${this.chip('Next irrigation',this.timeUntil(c.next),'mdi:calendar-clock',c.next)}
           ${this.chip('Last irrigation',this.timeSince(c.last),'mdi:history',c.last)}
@@ -276,7 +276,7 @@ class IrrigationSummaryCard extends HTMLElement {
       .hero-copy .countdown{color:var(--accent-blue);font-weight:700;font-variant-numeric:tabular-nums}
       .status-dot {width:9px;height:9px;border-radius:50%;background:var(--accent-green);flex:none}.active .status-dot{background:var(--accent-blue)}.error .status-dot{background:var(--accent-red)}.off .status-dot{background:var(--secondary-text-color)}
       .controller-section{border:1px solid var(--divider-color,rgba(128,128,128,.2));border-radius:13px;padding:12px;margin-top:12px}
-      .controller-heading{display:flex;align-items:center;width:100%;justify-content:space-between;gap:8px;padding:0;text-align:left}.controller-heading strong{flex:1}.controller-heading ha-icon{--mdc-icon-size:19px;color:var(--secondary-text-color)}
+      .controller-heading{display:flex;align-items:center;width:100%;justify-content:space-between;gap:8px;padding:0;text-align:left}.controller-heading strong{flex:1}.controller-heading .chevron{--mdc-icon-size:21px;color:var(--secondary-text-color);flex:none}
       .controller-state{font-size:12px;font-weight:650;color:var(--accent-green)}.controller-state.off{color:var(--secondary-text-color)}.controller-state.error{color:var(--accent-red)}.controller-state.active{color:var(--accent-blue)}
       .controller-countdown{display:block;margin-top:9px;color:var(--accent-blue);font-weight:650;font-variant-numeric:tabular-nums}
       .overview-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:10px}
