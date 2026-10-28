@@ -17,3 +17,10 @@ test('today outline and legend remain consistent even when a day is selected', (
   assert.ok(today.includes('outline: 2px solid var(--primary-color)'));
   assert.ok(legend.includes('border: 2px solid var(--primary-color)'));
 });
+
+test('selection glow animates softly and respects reduced motion', () => {
+  assert.ok(source.includes('@keyframes selected-day-glow'));
+  assert.ok(source.includes('animation: selected-day-glow 2.8s ease-in-out infinite'));
+  assert.ok(source.includes('@media (prefers-reduced-motion: reduce)'));
+  assert.ok(source.includes('animation: none'));
+});
