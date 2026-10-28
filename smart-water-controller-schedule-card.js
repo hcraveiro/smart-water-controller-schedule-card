@@ -2424,7 +2424,7 @@ class IrrigationSummaryCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    const ids = [...Object.values(this._config || {}), ...((this._config?.controllers || []).flatMap(item => Object.values(item)))]
+    const ids = [...Object.values(this._config || {}), ...((this._config?.controllers || []).flatMap(item => Object.values(item))), ...((this._config?.water_sensors || []).map(item => item.entity))]
       .flatMap(value => Array.isArray(value) ? value : [value])
       .filter(value => typeof value === 'string' &&
         /^(sensor|binary_sensor|input_boolean|switch)\./.test(value));
@@ -2620,7 +2620,7 @@ class IrrigationSummaryCard extends HTMLElement {
       ${this.chip('Forecast today',this.value(c.forecast_today,2),'mdi:weather-cloudy',c.forecast_today)}
       ${this.chip('Rain duration',this.valid(this.state(c.rain_duration)) ? `${Math.round(Number(this.state(c.rain_duration)) || 0)} min` : '—','mdi:timer-outline',c.rain_duration)}
     </div>
-    <div class="weather-bottom">${this.row('Last rain',this.timeSince(c.last_rain),c.last_rain,'mdi:history')}${this.row('Total irrigation water',this.value(c.water,2),c.water,'mdi:water')}</div>
+    <div class="weather-bottom">${this.row('Last rain',this.timeSince(c.last_rain),c.last_rain,'mdi:history')}${Array.isArray(c.water_sensors) && c.water_sensors.length ? c.water_sensors.map(item => this.row(`Total irrigation water (${item.name || 'Controller'})`,this.value(item.entity,2),item.entity,'mdi:water')).join('') : this.row('Total irrigation water',this.value(c.water,2),c.water,'mdi:water')}</div>
     <button class="details-toggle" data-toggle aria-expanded="${this._expanded}">
       <span>${this._expanded ? 'Hide weather details' : 'More weather details'}</span><ha-icon icon="mdi:chevron-${this._expanded ? 'up' : 'down'}"></ha-icon>
     </button>
