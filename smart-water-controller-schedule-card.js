@@ -1925,8 +1925,7 @@ class IrrigationScheduleCard extends HTMLElement {
                 }
 
                 .cal-cell.selected {
-                    border-color: var(--primary-color);
-                    background: color-mix(in srgb, var(--primary-color) 12%, var(--secondary-background-color));
+                    background: color-mix(in srgb, var(--primary-color) 28%, var(--secondary-background-color));
                 }
                 .cal-cell.today {
                     outline: 2px solid var(--primary-color);
