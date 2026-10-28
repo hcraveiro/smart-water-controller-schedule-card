@@ -2385,6 +2385,7 @@ class IrrigationSummaryCard extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this._expanded = false;
+    this._expandedControllers = new Set();
     this._timer = null;
   }
 
@@ -2548,8 +2549,8 @@ class IrrigationSummaryCard extends HTMLElement {
     const next = controllers.filter(c => c.nextTime !== null).sort((a,b) => a.nextTime-b.nextTime)[0];
     const last = controllers.filter(c => c.lastTime !== null).sort((a,b) => b.lastTime-a.lastTime)[0];
     const stateText = [on ? `${on} On` : '',off ? `${off} Off` : '',missing ? `${missing} Unavailable` : ''].filter(Boolean).join(' · ');
-    const headline = active.length ? active.length === 1 ? `Irrigating: ${active[0].name}` : `${active.length} controllers irrigating` : stateText || 'No controllers available';
-    const stationText = active.length ? active.map(c => `${c.name}: ${c.station}`).join(' · ') : 'Idle';
+    const headline = active.length ? 'Irrigation running' : on ? 'Irrigation ready' : missing === controllers.length ? 'Connection lost' : 'Irrigation unavailable';
+    const stationText = active.length ? active.map(c => `${c.name}: ${c.station}`).join(' · ') : 'No active irrigation';
     const tile = (label, c, id, fmt) => this.chip(label, c ? `${fmt(id)} · ${c.name}` : '—', 'mdi:calendar-clock', c?.[id] || '');
     const summary = `<div class="hero ${active.length ? 'active' : missing ? 'error' : on ? 'ready' : 'off'}">
       <span class="hero-icon"><ha-icon icon="mdi:sprout"></ha-icon></span>
@@ -2561,14 +2562,15 @@ class IrrigationSummaryCard extends HTMLElement {
     </div>`;
     const sections = controllers.map((c,index) => {
       const mode = c.connectionLost || !c.available ? 'error' : c.active ? 'active' : c.controller.toLowerCase() === 'on' ? 'ready' : 'off';
+      const expanded = !this._expandedControllers.has(index);
       return `<section class="controller-section">
-        <div class="controller-heading"><strong>${this.escape(c.name || `Controller ${index+1}`)}</strong><span class="controller-state ${mode}">${this.escape(c.available ? c.controller : 'Unavailable')}</span></div>
-        <div class="overview-grid">
+        <button class="controller-heading" data-controller-toggle="${index}" aria-expanded="${expanded}"><strong>${this.escape(c.name || `Controller ${index+1}`)}</strong><span class="controller-state ${mode}">${this.escape(c.available ? c.controller : 'Unavailable')}</span><ha-icon class="chevron" icon="mdi:chevron-${expanded ? 'up' : 'down'}"></ha-icon></button>
+        ${expanded ? `<div class="overview-grid">
           ${this.chip('Next irrigation',this.timeUntil(c.next),'mdi:calendar-clock',c.next)}
           ${this.chip('Last irrigation',this.timeSince(c.last),'mdi:history',c.last)}
           ${this.chip('Current station',c.active ? c.station : 'Idle','mdi:sprinkler',c.station)}
           ${this.chip('Controller',c.controller,'mdi:water-pump',c.controller)}
-        </div>
+        </div>` : ''}
         ${c.active ? `<small class="controller-countdown" data-live-controller="${index}">${this.escape(this.countdownFor(c.end))}</small>` : ''}
       </section>`;
     }).join('');
@@ -2655,7 +2657,7 @@ class IrrigationSummaryCard extends HTMLElement {
       .hero-copy .countdown{color:var(--accent-blue);font-weight:700;font-variant-numeric:tabular-nums}
       .status-dot {width:9px;height:9px;border-radius:50%;background:var(--accent-green);flex:none}.active .status-dot{background:var(--accent-blue)}.error .status-dot{background:var(--accent-red)}.off .status-dot{background:var(--secondary-text-color)}
       .controller-section{border:1px solid var(--divider-color,rgba(128,128,128,.2));border-radius:13px;padding:12px;margin-top:12px}
-      .controller-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+      .controller-heading{display:flex;align-items:center;width:100%;justify-content:space-between;gap:8px;padding:0;text-align:left}.controller-heading strong{flex:1}.controller-heading .chevron{--mdc-icon-size:21px;color:var(--secondary-text-color);flex:none}
       .controller-state{font-size:12px;font-weight:650;color:var(--accent-green)}.controller-state.off{color:var(--secondary-text-color)}.controller-state.error{color:var(--accent-red)}.controller-state.active{color:var(--accent-blue)}
       .controller-countdown{display:block;margin-top:9px;color:var(--accent-blue);font-weight:650;font-variant-numeric:tabular-nums}
       .overview-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:10px}
@@ -2681,6 +2683,12 @@ class IrrigationSummaryCard extends HTMLElement {
     this.shadowRoot.querySelectorAll('[data-info]').forEach(button => {
       button.addEventListener('click', () => this.moreInfo(button.dataset.info));
     });
+    this.shadowRoot.querySelectorAll('[data-controller-toggle]').forEach(button => button.addEventListener('click', () => {
+      const index = Number(button.dataset.controllerToggle);
+      if (this._expandedControllers.has(index)) this._expandedControllers.delete(index);
+      else this._expandedControllers.add(index);
+      this.render();
+    }));
     this.shadowRoot.querySelector('[data-toggle]')?.addEventListener('click', () => {
       this._expanded = !this._expanded;
       this.render();
