@@ -7,6 +7,7 @@ class IrrigationZonesCard extends HTMLElement {
     this.busy = false;
     this.timer = null;
     this.draftDuration = null;
+    this.draftDurations = {};
   }
   setConfig(config) {
     if (!Array.isArray(config.zones) || !config.zones.length) throw Error('zones is required');
@@ -32,7 +33,9 @@ class IrrigationZonesCard extends HTMLElement {
       this.config?.duration, this.config?.end_time, this.config?.stop,
       ...(this.config?.connection_switches || []),
       ...(this.config?.zones || []).flatMap(zone => [
-        zone.status, zone.today, zone.planned, zone.remaining, zone.valve
+        zone.status, zone.today, zone.planned, zone.remaining, zone.valve,
+        zone.duration, zone.end_time, zone.stop,
+        ...(zone.connection_switches || [])
       ])
     ].filter(Boolean);
     const current = ids.map(id => value?.states?.[id]);
@@ -63,25 +66,32 @@ class IrrigationZonesCard extends HTMLElement {
   valid(value) { return !['unknown','unavailable','none',''].includes(String(value ?? '').toLowerCase()); }
   running(zone) { return String(this.state(zone.status)).toLowerCase() === 'sprinkling'; }
   active() { return this.config?.zones?.find(zone => this.running(zone)); }
-  connectionLost() {
-    const switches = this.config?.connection_switches || [];
+  zoneGroup(zone) { return zone?.controller || '__default'; }
+  groupZones(zone) { return (this.config?.zones || []).filter(item => this.zoneGroup(item) === this.zoneGroup(zone)); }
+  connectionLost(zone = null) {
+    const switches = zone?.connection_switches ?? this.config?.connection_switches ?? [];
     return switches.some(id => !this.valid(this.state(id)));
   }
-  duration() {
-    const real = Number(this.state(this.config.duration));
-    if (this.draftDuration !== null && Number.isFinite(real) && real === this.draftDuration) this.draftDuration = null;
-    return this.draftDuration ?? (this.valid(this.state(this.config.duration)) && Number.isFinite(real) ? real : null);
+  durationId(zone = null) { return zone?.duration || this.config.duration; }
+  stopId(zone = null) { return zone?.stop || this.config.stop; }
+  endTimeId(zone = null) { return zone?.end_time || this.config.end_time; }
+  duration(zone = null) {
+    const id = this.durationId(zone);
+    const real = Number(this.state(id));
+    const draft = this.draftDurations[id];
+    if (draft !== undefined && Number.isFinite(real) && real === draft) delete this.draftDurations[id];
+    return this.draftDurations[id] ?? (this.valid(this.state(id)) && Number.isFinite(real) ? real : null);
   }
-  durationLimits() {
-    const attr = this.entity(this.config.duration)?.attributes || {};
+  durationLimits(zone = null) {
+    const attr = this.entity(this.durationId(zone))?.attributes || {};
     return {
       min: Number.isFinite(Number(attr.min)) ? Number(attr.min) : 1,
       max: Number.isFinite(Number(attr.max)) ? Number(attr.max) : 120,
       step: Number(this.config.duration_step) > 0 ? Number(this.config.duration_step) : 1
     };
   }
-  countdown() {
-    const raw = this.state(this.config.end_time);
+  countdown(zone = null) {
+    const raw = this.state(this.endTimeId(zone));
     if (!this.valid(raw)) return 'End time unavailable';
     const end = Date.parse(raw);
     if (!Number.isFinite(end)) return 'End time unavailable';
@@ -96,7 +106,7 @@ class IrrigationZonesCard extends HTMLElement {
   updateCountdown() {
     this.shadowRoot.querySelectorAll('[data-countdown]').forEach(el => {
       const zone = this.config?.zones?.[Number(el.dataset.countdown)];
-      if (zone && this.running(zone)) el.textContent = this.countdown();
+      if (zone && this.running(zone)) el.textContent = this.countdown(zone);
     });
   }
   info(id) {
@@ -118,25 +128,26 @@ class IrrigationZonesCard extends HTMLElement {
     const a = Number(done), b = Number(total);
     return Number.isFinite(a) && Number.isFinite(b) && b > 0 ? Math.min(100,Math.max(0,a / b * 100)) : null;
   }
-  async changeDuration(direction) {
-    if (this.busy || this.connectionLost() || !this.entity(this.config.duration)) return;
-    const current = this.duration();
+  async changeDuration(direction, zone = null) {
+    const id = this.durationId(zone);
+    if (this.busy || this.connectionLost(zone) || !this.entity(id)) return;
+    const current = this.duration(zone);
     if (current === null) return;
-    const {min,max,step} = this.durationLimits();
+    const {min,max,step} = this.durationLimits(zone);
     const next = Math.max(min, Math.min(max, Number((current + direction * step).toFixed(3))));
     if (next === current) return;
-    this.busy = true; this.draftDuration = next; this.render();
+    this.busy = true; this.draftDurations[id] = next; this.render();
     try {
-      await this._hass.callService('number','set_value',{entity_id:this.config.duration,value:next});
+      await this._hass.callService('number','set_value',{entity_id:id,value:next});
     } catch (error) {
-      this.draftDuration = null;
+      delete this.draftDurations[id];
       console.error('Failed to set duration:', error);
       alert('Unable to update irrigation duration.');
     } finally { this.busy = false; this.render(); }
   }
-  async press(id, message) {
-    if (!id || this.busy || this.connectionLost() || !confirm(message)) return;
-    if (this.connectionLost()) return;
+  async press(id, message, zone = null) {
+    if (!id || this.busy || this.connectionLost(zone) || !confirm(message)) return;
+    if (this.connectionLost(zone)) return;
     this.busy = true; this.render();
     try {
       await this._hass.callService('button','press',{entity_id:id});
@@ -146,25 +157,28 @@ class IrrigationZonesCard extends HTMLElement {
     } finally { this.busy = false; this.render(); }
   }
   start(zone) {
-    if (this.connectionLost()) return;
-    if (this.active()) { alert('Another irrigation zone is already running. Stop it first.'); return; }
-    const minutes = this.duration();
+    if (this.connectionLost(zone)) return;
+    if (this.groupZones(zone).some(other => this.running(other))) { alert('Another irrigation zone on this controller is already running. Stop it first.'); return; }
+    const minutes = this.duration(zone);
     if (minutes === null) { alert('Irrigation duration is unavailable.'); return; }
-    this.press(zone.start, `Start ${zone.name} for ${minutes} minutes?`);
+    this.press(zone.start, `Start ${zone.name} for ${minutes} minutes?`, zone);
   }
-  stop(name) {
-    this.press(this.config.stop, name ? `Stop irrigation for ${name}?` : 'Stop all irrigation?');
+  stop(name, zone = null) {
+    this.press(this.stopId(zone), name ? `Stop irrigation for ${name}?` : 'Stop all irrigation?', zone);
   }
   render() {
     if (!this.config || !this._hass) return;
-    const active = this.active(), duration = this.duration(), {min,max} = this.durationLimits();
-    const disconnected = this.connectionLost();
+    const active = this.active();
+    const multiController = new Set(this.config.zones.map(zone => this.zoneGroup(zone))).size > 1;
     const rows = this.config.zones.map((zone,index) => {
       const running = this.running(zone), expanded = this.openZone === index, progress = this.progress(zone);
+      const duration = this.duration(zone), {min,max} = this.durationLimits(zone);
+      const disconnected = this.connectionLost(zone);
+      const activeInGroup = this.groupZones(zone).some(other => this.running(other));
       return `<section class="zone ${running ? 'running' : ''}">
         <button class="summary" data-toggle="${index}" aria-expanded="${expanded}">
           <span class="symbol"><ha-icon icon="${running ? 'mdi:water' : 'mdi:sprinkler-variant'}"></ha-icon></span>
-          <span class="title"><strong>${this.esc(zone.name)}</strong><small class="${running ? 'active' : ''}">${this.esc(this.state(zone.status))}</small>${running ? `<small class="countdown" data-countdown="${index}">${this.esc(this.countdown())}</small>` : ''}</span>
+          <span class="title"><strong>${this.esc(zone.name)}</strong><small class="${running ? 'active' : ''}">${this.esc(this.state(zone.status))}</small>${running ? `<small class="countdown" data-countdown="${index}">${this.esc(this.countdown(zone))}</small>` : ''}</span>
           <span class="today"><strong>${this.value(zone.today)}</strong><small>Today</small></span>
           <ha-icon class="chevron" icon="mdi:chevron-${expanded ? 'up':'down'}"></ha-icon>
         </button>
@@ -172,16 +186,16 @@ class IrrigationZonesCard extends HTMLElement {
           <div class="metrics">${this.metric('Status',zone.status)}${this.metric('Irrigated today',zone.today)}${this.metric('Scheduled today',zone.planned)}${this.metric('Remaining today',zone.remaining)}</div>
           ${progress === null ? '' : `<div class="progress-label"><span>Today's schedule</span><strong>${Math.round(progress)}%</strong></div><div class="progress"><div style="width:${progress}%"></div></div>`}
           <div class="controls"><div class="duration"><label>Manual duration</label><div class="stepper">
-            <button data-step="-1" ${this.busy || disconnected || duration === null || duration <= min ? 'disabled':''}><ha-icon icon="mdi:minus"></ha-icon></button>
-            <button data-info="${this.esc(this.config.duration)}" class="duration-value">${duration ?? '—'} min</button>
-            <button data-step="1" ${this.busy || disconnected || duration === null || duration >= max ? 'disabled':''}><ha-icon icon="mdi:plus"></ha-icon></button>
-          </div></div><button class="action ${running ? 'stop':'start'}" data-action="${index}" ${this.busy || disconnected || (!running && !!active) ? 'disabled':''}><ha-icon icon="mdi:${running ? 'stop':'play'}"></ha-icon>${running ? 'Stop':'Start'}</button></div>
+            <button data-step="-1" data-zone="${index}" ${this.busy || disconnected || duration === null || duration <= min ? 'disabled':''}><ha-icon icon="mdi:minus"></ha-icon></button>
+            <button data-info="${this.esc(this.durationId(zone))}" class="duration-value">${duration ?? '—'} min</button>
+            <button data-step="1" data-zone="${index}" ${this.busy || disconnected || duration === null || duration >= max ? 'disabled':''}><ha-icon icon="mdi:plus"></ha-icon></button>
+          </div></div><button class="action ${running ? 'stop':'start'}" data-action="${index}" ${this.busy || disconnected || (!running && activeInGroup) ? 'disabled':''}><ha-icon icon="mdi:${running ? 'stop':'play'}"></ha-icon>${running ? 'Stop':'Start'}</button></div>
           ${zone.valve ? `<button class="valve" data-info="${this.esc(zone.valve)}"><ha-icon icon="mdi:valve"></ha-icon>Valve details<ha-icon icon="mdi:chevron-right"></ha-icon></button>` : ''}
         </div>` : ''}</section>`;
     }).join('');
-    const globalStop = this.config.show_global_stop && active
+    const globalStop = !multiController && this.config.show_global_stop && active
       ? `<div class="global"><span><ha-icon icon="mdi:water"></ha-icon> Irrigating: ${this.esc(active.name)}</span><button data-stop-all ${this.busy || disconnected?'disabled':''}><ha-icon icon="mdi:stop-circle-outline"></ha-icon>Stop All</button></div>` : '';
-    const connectionWarning = disconnected
+    const connectionWarning = !multiController && this.connectionLost()
       ? `<div class="connection-warning"><ha-icon icon="mdi:wifi-off"></ha-icon><span>Controller unavailable — irrigation controls disabled</span></div>`
       : '';
     this.shadowRoot.innerHTML = `<style>
@@ -216,10 +230,10 @@ class IrrigationZonesCard extends HTMLElement {
       this.render();
     }));
     this.shadowRoot.querySelectorAll('[data-info]').forEach(el => el.addEventListener('click', () => this.info(el.dataset.info)));
-    this.shadowRoot.querySelectorAll('[data-step]').forEach(el => el.addEventListener('click', () => this.changeDuration(Number(el.dataset.step))));
+    this.shadowRoot.querySelectorAll('[data-step]').forEach(el => el.addEventListener('click', () => this.changeDuration(Number(el.dataset.step), this.config.zones[Number(el.dataset.zone)])));
     this.shadowRoot.querySelectorAll('[data-action]').forEach(el => el.addEventListener('click', () => {
       const zone = this.config.zones[Number(el.dataset.action)];
-      if (this.running(zone)) this.stop(zone.name); else this.start(zone);
+      if (this.running(zone)) this.stop(zone.name, zone); else this.start(zone);
     }));
     this.shadowRoot.querySelector('[data-stop-all]')?.addEventListener('click', () => this.stop());
     this.updateCountdown();
