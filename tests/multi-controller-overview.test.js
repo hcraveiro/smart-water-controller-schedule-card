@@ -33,7 +33,9 @@ test('multi-controller overview shows earliest next, latest last and two separat
   const {dom,card}=fixture();
   try {
     const html=card.shadowRoot.innerHTML;
-    assert.match(html,/1 On · 1 Off/);
+    assert.match(html,/Irrigation ready/);
+    assert.match(html,/No active irrigation/);
+    assert.doesNotMatch(html,/1 On · 1 Off/);
     assert.match(html,/In 1 h/);
     assert.match(html,/Solem Bushes/);
     assert.equal((html.match(/class="controller-section"/g)||[]).length,2);
@@ -62,7 +64,7 @@ test('unavailable controller is not counted as Off',()=>{
   try {
     states['sensor.solem_controller']={state:'unavailable'};
     card.hass={states};
-    assert.match(card.shadowRoot.innerHTML,/1 Unavailable/);
+    assert.match(card.shadowRoot.innerHTML,/Unavailable/);
     assert.doesNotMatch(card.shadowRoot.innerHTML,/1 Off/);
   } finally {dom.window.close();}
 });
