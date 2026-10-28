@@ -173,7 +173,7 @@ class IrrigationSummaryCard extends HTMLElement {
     const tile = (label, c, id, fmt) => this.chip(label, c ? `${fmt(id)} · ${c.name}` : '—', 'mdi:calendar-clock', c?.[id] || '');
     const summary = `<div class="hero ${active.length ? 'active' : missing ? 'error' : on ? 'ready' : 'off'}">
       <span class="hero-icon"><ha-icon icon="mdi:sprout"></ha-icon></span>
-      <div class="hero-copy"><strong>${this.escape(headline)}</strong><small>${this.escape(stateText)}</small><small>${this.escape(stationText)}</small></div><span class="status-dot"></span>
+      <div class="hero-copy"><strong>${this.escape(headline)}</strong><small>${this.escape(stationText)}</small></div><span class="status-dot"></span>
     </div>
     <div class="overview-grid">
       ${this.chip('Next irrigation',next ? `${this.timeUntil(next.next)} · ${next.name}` : '—','mdi:calendar-clock',next?.next)}
