@@ -181,7 +181,7 @@ class IrrigationSummaryCard extends HTMLElement {
     </div>`;
     const sections = controllers.map((c,index) => {
       const mode = c.connectionLost || !c.available ? 'error' : c.active ? 'active' : c.controller.toLowerCase() === 'on' ? 'ready' : 'off';
-      const expanded = this._expandedControllers.has(index);
+      const expanded = !this._expandedControllers.has(index);
       return `<section class="controller-section">
         <button class="controller-heading" data-controller-toggle="${index}" aria-expanded="${expanded}"><strong>${this.escape(c.name || `Controller ${index+1}`)}</strong><span class="controller-state ${mode}">${this.escape(c.available ? c.controller : 'Unavailable')}</span><ha-icon icon="mdi:chevron-${expanded ? 'up' : 'down'}"></ha-icon></button>
         ${expanded ? `<div class="overview-grid">
