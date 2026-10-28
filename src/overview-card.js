@@ -167,8 +167,8 @@ class IrrigationSummaryCard extends HTMLElement {
     const next = controllers.filter(c => c.nextTime !== null).sort((a,b) => a.nextTime-b.nextTime)[0];
     const last = controllers.filter(c => c.lastTime !== null).sort((a,b) => b.lastTime-a.lastTime)[0];
     const stateText = [on ? `${on} On` : '',off ? `${off} Off` : '',missing ? `${missing} Unavailable` : ''].filter(Boolean).join(' · ');
-    const headline = active.length ? active.length === 1 ? `Irrigating: ${active[0].name}` : `${active.length} controllers irrigating` : stateText || 'No controllers available';
-    const stationText = active.length ? active.map(c => `${c.name}: ${c.station}`).join(' · ') : 'Idle';
+    const headline = active.length ? 'Irrigation running' : on ? 'Irrigation ready' : missing === controllers.length ? 'Connection lost' : 'Irrigation unavailable';
+    const stationText = active.length ? active.map(c => `${c.name}: ${c.station}`).join(' · ') : 'No active irrigation';
     const tile = (label, c, id, fmt) => this.chip(label, c ? `${fmt(id)} · ${c.name}` : '—', 'mdi:calendar-clock', c?.[id] || '');
     const summary = `<div class="hero ${active.length ? 'active' : missing ? 'error' : on ? 'ready' : 'off'}">
       <span class="hero-icon"><ha-icon icon="mdi:sprout"></ha-icon></span>
