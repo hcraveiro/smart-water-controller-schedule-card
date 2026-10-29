@@ -24,3 +24,15 @@ test('selection glow animates softly and respects reduced motion', () => {
   assert.ok(source.includes('@media (prefers-reduced-motion: reduce)'));
   assert.ok(source.includes('animation: none'));
 });
+
+test('historical and projected station mini-cards use equal bar heights', () => {
+  const actual = source.split('.cal-detail-track {')[1]?.split('}')[0] || '';
+  const projected = source.split('.cal-detail-track.is-projected {')[1]?.split('}')[0] || '';
+  const station = source.split('.cal-detail-station {')[1]?.split('}')[0] || '';
+  assert.match(actual, /height:\s*9px/);
+  assert.match(projected, /height:\s*9px/);
+  assert.match(projected, /box-sizing:\s*border-box/);
+  assert.match(station, /display:\s*flex/);
+  assert.match(station, /flex-direction:\s*column/);
+  assert.ok(source.includes('projected-fill'));
+});
