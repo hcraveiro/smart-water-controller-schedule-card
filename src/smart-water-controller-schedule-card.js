@@ -1301,9 +1301,13 @@ class IrrigationScheduleCard extends HTMLElement {
         const parts = [];
         if (isHistorical) {
             parts.push('<div>Rainfall: ' + (observations.rain === null ? 'No data' : observations.rain.toFixed(2) + ' mm') + '</div>');
+            parts.push('<div class="cal-day-metric-label">Actual / Planned (mm)</div>');
             observations.stations.forEach((amount, index) => {
+                const plan = observations.planned[index];
+                const actualLabel = amount === null ? 'No data' : amount.toFixed(2);
+                const plannedLabel = plan === null ? 'No data' : plan.toFixed(2);
                 parts.push('<div>' + escapeText(this._getStationLabel("station_" + (index + 1) + "_minutes")) +
-                    ': ' + (amount === null ? 'No data' : amount.toFixed(2) + ' mm') + '</div>');
+                    ': ' + actualLabel + ' / ' + plannedLabel + ' mm</div>');
             });
         } else {
             parts.push('<div>Rain forecast: ' + (observations.forecastRain
@@ -1313,10 +1317,16 @@ class IrrigationScheduleCard extends HTMLElement {
                 const month = this._getMonthSchedule();
                 const stations = Object.entries(month.stations || {}).filter(([, duration]) => Number(duration) > 0);
                 if (stations.length) {
+                    parts.push('<div class="cal-day-metric-label">Projected watering (mm)</div>');
                     const slots = (month.hours || []).filter(Boolean).length;
                     stations.forEach(([station, duration]) => {
+                        const match = String(station).match(/^station_(\d+)_minutes$/);
+                        const index = match ? Number(match[1]) - 1 : -1;
+                        const rate = index >= 0 ? this._calendarMmPerMinute(index) : null;
+                        const amount = rate === null ? 'No plan data'
+                            : (Number(duration) * slots * rate).toFixed(2) + ' mm';
                         parts.push('<div>' + escapeText(this._getStationLabel(station)) +
-                            ': ' + (Number(duration) * slots) + ' minutes planned</div>');
+                            ': ' + amount + ' projected</div>');
                     });
                 } else {
                     parts.push('<div>Irrigation scheduled</div>');
