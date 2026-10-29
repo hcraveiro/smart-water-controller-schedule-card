@@ -748,6 +748,20 @@ test('historical zero watering with zero target shows no irrigation planned', ()
     'No irrigation planned');
 });
 
+test('unscheduled future watering has the same sprinkler icon as scheduled stations', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true
+  }));
+  atToday('2026-06-19', () => {
+    card._selectedCalendarDay = 20;
+    card.render();
+  });
+  const empty = card.shadowRoot.querySelector('.cal-detail-empty');
+  assert.ok(empty);
+  assert.equal(empty.querySelector('ha-icon')?.getAttribute('icon'), 'mdi:sprinkler-variant');
+  assert.match(empty.textContent, /No irrigation currently projected/);
+});
+
 test('calendar day cells have selection state without marking empty cells', () => {
   const { card } = atToday('2026-06-19', () => makeCard({ calendar: true, calendar_history: true }));
   atToday('2026-06-19', () => {
