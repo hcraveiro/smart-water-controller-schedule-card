@@ -457,10 +457,10 @@ test('selecting a past day reveals actual sensor totals and selecting again clos
 });
 
 test('no projected irrigation displays the sprinkler icon in selected-day details', () => {
-  const { card } = atToday('2026-11-24', () => makeCard({
+  const { card } = atToday('2026-10-29', () => makeCard({
     calendar: true, calendar_history: true,
   }));
-  atToday('2026-11-24', () => {
+  atToday('2026-10-29', () => {
     card.currentMonth = 10;
     card._selectedCalendarDay = 24;
     card.render();
