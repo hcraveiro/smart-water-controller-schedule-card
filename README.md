@@ -308,7 +308,34 @@ Only one zone expands at a time; all start collapsed. Start, Stop, Stop All and 
 Station entity IDs in the example reflect one RainBird setup. Adapt them to your controller; do not assume the entity IDs are universal.
 
 
-### Calendar actual vs planned mm (V2.0.7b1)
+### Selected-day mini-cards (V2.0.7b2)
+
+The selected calendar day now uses a compact, theme-aware card layout:
+
+- **Header:** selected date and an **Actual / Planned** or **Projected
+  irrigation** status pill.
+- **Historical station mini-cards:** station name, actual / planned mm,
+  a **solid progress bar** showing how much of the recorded target was
+  applied, and a compact applied-percentage label. The bar caps at 100%
+  if the applied amount exceeds the target; the label still shows the
+  full percentage.
+- **Future station mini-cards:** projected mm, a **striped and dashed
+  bar** to distinguish prediction from actual progress, and
+  **Planned · Pending**. The projected bar does not imply 100%
+  completion. Missing rates use an empty dashed bar and a
+  **Projection unavailable** label.
+- **Rain card:** actual recorded rainfall in mm for historic days, or
+  rainfall forecast probability/threshold information for future days.
+- **Safety and accessibility:** zero/missing targets never fabricate
+  percentages, active progress bars expose accessible progress values,
+  and station names are escaped. Existing day selection and calendar
+  projection calculations are unchanged.
+
+The redesign uses Home Assistant theme CSS variables, supports dark and
+light themes, and keeps compact spacing for two schedule cards side by
+side. No integration or dashboard configuration changes are required.
+
+
 
 With `calendar: true` and `calendar_history: true`, selecting a past or
 current day shows **Actual / Planned (mm)** for every station, followed by
