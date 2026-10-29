@@ -308,6 +308,15 @@ Only one zone expands at a time; all start collapsed. Start, Stop, Stop All and 
 Station entity IDs in the example reflect one RainBird setup. Adapt them to your controller; do not assume the entity IDs are universal.
 
 
+### Consistent tablet station mini-card heights (V2.0.7b5)
+
+- Use an identical 96px outer height for historical and projected
+  station mini-cards in the calendar selected-day panel on tablets.
+- Distribute the content consistently inside each card instead of relying
+  on browser-specific intrinsic height and line spacing.
+- Allow flexible card height on very narrow displays to avoid text clipping.
+- Keep existing planned/historical bars, values, and controls unchanged.
+
 ### Consistent selected-day station card heights (V2.0.7b4)
 
 - Match projected irrigation progress-track height to historical actual progress
