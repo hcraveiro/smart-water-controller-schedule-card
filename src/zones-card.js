@@ -63,6 +63,18 @@ class IrrigationZonesCard extends HTMLElement {
   }
   entity(id) { return id ? this._hass?.states?.[id] : null; }
   state(id) { return this.entity(id)?.state ?? 'unavailable'; }
+  irrigationSource(zone) {
+    const source = this.entity(zone?.status)?.attributes?.irrigation_source;
+    return typeof source === 'string' && source.trim() ? source.trim().toLowerCase() : null;
+  }
+  irrigationLabel(zone) {
+    return {
+      automatic: 'Scheduled watering',
+      manual: 'Manual watering',
+      manual_cycle: 'Manual cycle',
+      external: 'External watering'
+    }[this.irrigationSource(zone)] || null;
+  }
   valid(value) { return !['unknown','unavailable','none',''].includes(String(value ?? '').toLowerCase()); }
   running(zone) { return String(this.state(zone.status)).toLowerCase() === 'sprinkling'; }
   active() { return this.config?.zones?.find(zone => this.running(zone)); }
@@ -101,7 +113,8 @@ class IrrigationZonesCard extends HTMLElement {
     const m = Math.floor(seconds % 3600 / 60);
     const s = seconds % 60;
     const pad = n => String(n).padStart(2, '0');
-    return 'Stopping in ' + (h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`);
+    const label = this.irrigationSource(zone) === 'manual_cycle' ? 'Station ends in ' : 'Stopping in ';
+    return label + (h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`);
   }
   updateCountdown() {
     this.shadowRoot.querySelectorAll('[data-countdown]').forEach(el => {
@@ -173,13 +186,14 @@ class IrrigationZonesCard extends HTMLElement {
     const multiController = new Set(this.config.zones.map(zone => this.zoneGroup(zone))).size > 1;
     const rows = this.config.zones.map((zone,index) => {
       const running = this.running(zone), expanded = this.openZone === index, progress = this.progress(zone);
+      const sourceLabel = running ? this.irrigationLabel(zone) : null;
       const duration = this.duration(zone), {min,max} = this.durationLimits(zone);
       const disconnected = this.connectionLost(zone);
       const activeInGroup = this.groupZones(zone).some(other => this.running(other));
       return `<section class="zone ${running ? 'running' : ''}">
         <button class="summary" data-toggle="${index}" aria-expanded="${expanded}">
           <span class="symbol"><ha-icon icon="${running ? 'mdi:water' : 'mdi:sprinkler-variant'}"></ha-icon></span>
-          <span class="title"><strong>${this.esc(zone.name)}</strong><small class="${running ? 'active' : ''}">${this.esc(this.state(zone.status))}</small>${running ? `<small class="countdown" data-countdown="${index}">${this.esc(this.countdown(zone))}</small>` : ''}</span>
+          <span class="title"><strong>${this.esc(zone.name)}</strong><small class="${running ? 'active' : ''}">${this.esc(this.state(zone.status))}</small>${sourceLabel ? `<small class="irrigation-source">${this.esc(sourceLabel)}</small>` : ''}${running ? `<small class="countdown" data-countdown="${index}">${this.esc(this.countdown(zone))}</small>` : ''}</span>
           <span class="today"><strong>${this.value(zone.today)}</strong><small>Today</small></span>
           <ha-icon class="chevron" icon="mdi:chevron-${expanded ? 'up':'down'}"></ha-icon>
         </button>
@@ -195,7 +209,7 @@ class IrrigationZonesCard extends HTMLElement {
         </div>` : ''}</section>`;
     }).join('');
     const globalStop = !multiController && this.config.show_global_stop && active
-      ? `<div class="global"><span><ha-icon icon="mdi:water"></ha-icon> Irrigating: ${this.esc(active.name)}</span><button data-stop-all ${this.busy || disconnected?'disabled':''}><ha-icon icon="mdi:stop-circle-outline"></ha-icon>Stop All</button></div>` : '';
+      ? `<div class="global"><span><ha-icon icon="mdi:water"></ha-icon> Irrigating: ${this.esc(active.name)}${this.irrigationLabel(active) ? ` · ${this.esc(this.irrigationLabel(active))}` : ''}</span><button data-stop-all ${this.busy || disconnected?'disabled':''}><ha-icon icon="mdi:stop-circle-outline"></ha-icon>Stop All</button></div>` : '';
     const connectionWarning = !multiController && disconnected
       ? `<div class="connection-warning"><ha-icon icon="mdi:wifi-off"></ha-icon><span>Controller unavailable — irrigation controls disabled</span></div>`
       : '';
@@ -208,7 +222,7 @@ class IrrigationZonesCard extends HTMLElement {
       .symbol{display:flex;align-items:center;justify-content:center;width:43px;height:43px;flex:none;border-radius:13px;background:color-mix(in srgb,var(--green) 13%,transparent);color:var(--green)}
       .running .symbol{background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue)}.symbol ha-icon{--mdc-icon-size:24px}
       .title{display:flex;flex-direction:column;flex:1;gap:5px;min-width:0}.title strong{font-size:14px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      small{font-size:12px;color:var(--secondary-text-color)}.title .active,.countdown{color:var(--blue);font-weight:650}.countdown{font-size:11px;font-variant-numeric:tabular-nums}
+      small{font-size:12px;color:var(--secondary-text-color)}.title .active,.countdown{color:var(--blue);font-weight:650}.title .irrigation-source{font-size:11px;color:var(--secondary-text-color)}.countdown{font-size:11px;font-variant-numeric:tabular-nums}
       .today{display:flex;flex-direction:column;text-align:right;gap:3px;min-width:49px}.today strong{font-size:15px;font-variant-numeric:tabular-nums}.chevron{color:var(--secondary-text-color);--mdc-icon-size:21px}
       .details{padding:1px 1px 15px 55px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
       .metric{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;padding:10px;border-radius:10px;background:var(--secondary-background-color,rgba(128,128,128,.09));text-align:left}
