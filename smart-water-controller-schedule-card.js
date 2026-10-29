@@ -157,8 +157,16 @@ class IrrigationScheduleCard extends HTMLElement {
         this._unsubscribeForecast = null;
         this._dailyForecast = null;
         this._selectedCalendarDay = null;
+        this._calendarUnit = "mm";
 
         this.shadowRoot.addEventListener("click", (event) => {
+            const unit = event.target.closest?.("[data-calendar-unit]");
+            if (unit) {
+                this._calendarUnit = unit.dataset.calendarUnit;
+                this._loadCalendarData();
+                this.render();
+                return;
+            }
             const cell = event.target.closest?.(".cal-cell[data-day]");
             if (!cell) return;
             const day = Number(cell.dataset.day);
@@ -189,6 +197,7 @@ class IrrigationScheduleCard extends HTMLElement {
 
         this._unsubscribeCalendarForecast();
         this._config = config;
+        this._calendarUnit = config.calendar_unit === "minutes" ? "minutes" : "mm";
         this._historyKey = null;
         this.sensor = config.sensor;
         this._entitySignature = null;
@@ -1066,13 +1075,39 @@ class IrrigationScheduleCard extends HTMLElement {
         });
     }
 
+    _calendarDurationIds() {
+        const ids = Array.isArray(this._config?.calendar_station_sensors)
+            ? this._config.calendar_station_sensors : [];
+        const configuredActual = this._config?.calendar_duration_station_sensors ?? [];
+        const configuredPlanned = this._config?.calendar_planned_duration_station_sensors ?? [];
+        return {
+            actual: ids.map((id, index) => configuredActual[index] ||
+                (id?.includes("sprinkle_total_amount_today")
+                    ? id.replace("sprinkle_total_amount_today", "sprinkle_duration_today") : null)),
+            planned: ids.map((id, index) => configuredPlanned[index] ||
+                (id?.includes("sprinkle_total_amount_today")
+                    ? id.replace("sprinkle_total_amount_today", "planned_sprinkle_duration_today") : null)),
+        };
+    }
+
+    _calendarDurationLabel(seconds) {
+        if (seconds === null || !Number.isFinite(Number(seconds)) || Number(seconds) < 0)
+            return "No data";
+        const total = Math.round(Number(seconds));
+        const minutes = Math.floor(total / 60);
+        const remaining = total % 60;
+        return remaining ? minutes + "m " + String(remaining).padStart(2, "0") + "s" : minutes + "m";
+    }
+
     _calendarSourceIds() {
         const stations = Array.isArray(this._config?.calendar_station_sensors)
             ? this._config.calendar_station_sensors.filter((id) => typeof id === "string" && id.startsWith("sensor."))
             : [];
         const planned = this._calendarPlannedStationIds().filter(Boolean);
+        const duration = this._calendarUnit === "minutes" ? this._calendarDurationIds() : null;
+        const durations = duration ? [...duration.actual, ...duration.planned].filter(Boolean) : [];
         const rain = this._config?.calendar_rain_sensor;
-        return [...new Set([...stations, ...planned,
+        return [...new Set([...stations, ...planned, ...durations,
             ...(typeof rain === "string" && rain.startsWith("sensor.") ? [rain] : [])])];
     }
 
@@ -1271,6 +1306,11 @@ class IrrigationScheduleCard extends HTMLElement {
             amounts[id] === undefined ? null : Number(amounts[id]));
         const planned = this._calendarPlannedStationIds().map((id) =>
             id && amounts[id] !== undefined ? Number(amounts[id]) : null);
+        const durationIds = this._calendarDurationIds();
+        const durations = durationIds.actual.map((id) =>
+            id && amounts[id] !== undefined ? Number(amounts[id]) : null);
+        const plannedDurations = durationIds.planned.map((id) =>
+            id && amounts[id] !== undefined ? Number(amounts[id]) : null);
         const watered = stations.some((amount) => amount !== null && amount > 0);
         const today = new Date();
         const date = new Date(year, month, day);
@@ -1288,7 +1328,7 @@ class IrrigationScheduleCard extends HTMLElement {
         const probability = Number(daily?.precipitation_probability);
         const forecastRain = !past && daily && Number.isFinite(probability)
             && probability >= (Number.isFinite(probabilityThreshold) ? probabilityThreshold : 50);
-        return { rain, watered, stations, planned, forecastRain, probability, past,
+        return { rain, watered, stations, planned, durations, plannedDurations, forecastRain, probability, past,
             known: Object.keys(amounts).some((id) => this._calendarSourceIds().includes(id)) };
     }
 
@@ -1304,6 +1344,7 @@ class IrrigationScheduleCard extends HTMLElement {
             { day: "numeric", month: "long", year: "numeric" }
         ));
         const status = isHistorical ? "Actual / Planned" : "Projected irrigation";
+        const useMinutes = this._calendarUnit === "minutes";
         const finiteAmount = (amount) => amount !== null && Number.isFinite(amount) && amount >= 0;
         const formattedAmount = (amount) => finiteAmount(amount) ? amount.toFixed(2) : "No data";
 
@@ -1317,9 +1358,13 @@ class IrrigationScheduleCard extends HTMLElement {
             const percent = !projected && hasAmount && usablePlan
                 ? Math.min(100, Math.max(0, Math.round((amount / planned) * 100))) : null;
             const width = percent === null ? 0 : percent;
-            const amountLabel = projected
-                ? (hasAmount ? amount.toFixed(2) + " mm" : "No plan data")
-                : formattedAmount(amount) + " / " + formattedAmount(planned) + " mm";
+            const amountLabel = useMinutes
+                ? (projected
+                    ? (hasAmount ? this._calendarDurationLabel(amount) : "No plan data")
+                    : this._calendarDurationLabel(amount) + " / " + this._calendarDurationLabel(planned))
+                : (projected
+                    ? (hasAmount ? amount.toFixed(2) + " mm" : "No plan data")
+                    : formattedAmount(amount) + " / " + formattedAmount(planned) + " mm");
             const secondaryLabel = projected
                 ? (hasAmount ? "Planned · Pending" : "Projection unavailable")
                 : (percent !== null ? percent + "% applied"
@@ -1357,7 +1402,9 @@ class IrrigationScheduleCard extends HTMLElement {
             observations.stations.forEach((actual, index) => {
                 stationCards.push(stationCard(
                     "station_" + (index + 1) + "_minutes",
-                    actual, observations.planned[index] ?? null, false
+                    useMinutes ? observations.durations[index] : actual,
+                    useMinutes ? observations.plannedDurations[index] ?? null : observations.planned[index] ?? null,
+                    false
                 ));
             });
         } else if (entry.waters) {
@@ -1368,8 +1415,9 @@ class IrrigationScheduleCard extends HTMLElement {
                 .forEach(([station, duration]) => {
                     const match = String(station).match(/^station_(\d+)_minutes$/);
                     const index = match ? Number(match[1]) - 1 : -1;
-                    const rate = index >= 0 ? this._calendarMmPerMinute(index) : null;
-                    const amount = rate === null ? null : Number(duration) * slots * rate;
+                    const rate = useMinutes ? null : (index >= 0 ? this._calendarMmPerMinute(index) : null);
+                    const amount = useMinutes ? Number(duration) * slots * 60
+                        : rate === null ? null : Number(duration) * slots * rate;
                     stationCards.push(stationCard(station, amount, null, true));
                 });
         }
@@ -1389,6 +1437,10 @@ class IrrigationScheduleCard extends HTMLElement {
                 '<div class="cal-detail-date"><ha-icon icon="mdi:calendar-month" aria-hidden="true"></ha-icon>' +
                     '<strong>' + date + '</strong></div>' +
                 '<span class="cal-detail-status">' + status + '</span>' +
+                '<div class="cal-detail-unit-toggle" role="group" aria-label="Irrigation unit">' +
+                    '<button type="button" data-calendar-unit="mm" aria-pressed="' + (!useMinutes) + '">mm</button>' +
+                    '<button type="button" data-calendar-unit="minutes" aria-pressed="' + useMinutes + '">min</button>' +
+                '</div>' +
             '</div>' +
             (stationCards.length
                 ? '<div class="cal-detail-stations">' + stationCards.join("") + '</div>'
@@ -2117,6 +2169,20 @@ class IrrigationScheduleCard extends HTMLElement {
                     font-weight: 600; color: var(--secondary-text-color);
                     background: var(--card-background-color, #fff);
                 }
+                .cal-detail-unit-toggle {
+                    display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px;
+                    background: var(--secondary-background-color); border: 1px solid var(--divider-color);
+                }
+                .cal-detail-unit-toggle button {
+                    border: 0; border-radius: 6px; padding: 4px 8px;
+                    font: inherit; font-size: 11px; cursor: pointer;
+                    color: var(--secondary-text-color); background: transparent;
+                }
+                .cal-detail-unit-toggle button[aria-pressed="true"] {
+                    color: var(--primary-text-color); background: var(--card-background-color);
+                    box-shadow: 0 1px 3px rgba(0,0,0,.12);
+                }
+                .cal-detail-unit-toggle button:focus-visible { outline: 2px solid var(--primary-color); }
                 .cal-detail-stations { display: grid; gap: 8px; }
                 .cal-detail-station {
                     padding: 8px 11px; border-radius: 10px;
