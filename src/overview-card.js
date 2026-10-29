@@ -130,7 +130,7 @@ class IrrigationSummaryCard extends HTMLElement {
     const stop = this.actionEntity(controller, 'stop');
     const controllerOn = this.state(controller.controller).toLowerCase() === 'on';
     const lost = (controller.connection_switches || []).some(id => !this.valid(this.state(id)));
-    const disabled = this._commandBusy || lost || !controllerOn || (isCycle ? !stop : !run || !duration);
+    const disabled = this._commandBusy || lost || (isCycle ? !stop : !controllerOn || !run || !duration);
     const label = isCycle ? 'Stop All' : 'Run Cycle';
     const desc = isCycle ? 'Stop the complete irrigation cycle'
       : duration ? `${duration.stations} ${duration.stations === 1 ? 'station' : 'stations'} · ${duration.totalMinutes} min total`
