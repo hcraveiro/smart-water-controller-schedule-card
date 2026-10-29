@@ -2122,11 +2122,17 @@ class IrrigationScheduleCard extends HTMLElement {
                     background: var(--card-background-color, #fff);
                     border: 1px solid var(--divider-color, #e2e5e8);
                     min-width: 0;
+                    box-sizing: border-box;
+                    height: 96px;
                     display: flex; flex-direction: column;
+                    justify-content: space-between;
+                }
+                @media (max-width: 350px) {
+                    .cal-detail-station { height: auto; min-height: 96px; }
                 }
                 .cal-detail-station-heading {
                     display: flex; align-items: center; justify-content: space-between;
-                    flex-wrap: wrap; column-gap: 8px; row-gap: 4px; margin-bottom: 9px;
+                    flex-wrap: wrap; column-gap: 8px; row-gap: 4px; margin-bottom: 0;
                 }
                 .cal-detail-station-name {
                     display: inline-flex; align-items: center; gap: 6px;
@@ -2160,7 +2166,7 @@ class IrrigationScheduleCard extends HTMLElement {
                 }
                 .projected-fill.no-data { width: 0; }
                 .cal-detail-station-foot {
-                    margin-top: 5px; display: flex; align-items: center;
+                    margin-top: 0; display: flex; align-items: center;
                     justify-content: space-between; gap: 8px; flex-wrap: wrap;
                     font-size: 10px; color: var(--secondary-text-color);
                 }
