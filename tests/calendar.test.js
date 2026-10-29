@@ -686,6 +686,68 @@ test('selected-day mini-cards escape station names from Home Assistant', () => {
   assert.equal(panel.querySelector('.cal-detail-station img'), null);
 });
 
+
+test('historical irrigation beyond planned target caps displayed percentage but retains mm', () => {
+  const actual = 'sensor.rainbird_sprinkle_total_amount_today_front_lawn';
+  const planned = 'sensor.rainbird_forecasted_sprinkle_today_front_lawn';
+  const { card } = atToday('2026-10-29', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_station_sensors: [actual]
+  }));
+  card._historyByDay = { '2026-10-03': { [actual]: 2.14, [planned]: 0.04 } };
+  atToday('2026-10-29', () => {
+    card.currentMonth = 9;
+    card._selectedCalendarDay = 3;
+    card.render();
+  });
+  const panel = card.shadowRoot.querySelector('.cal-day-details');
+  assert.equal(panel.querySelector('.cal-detail-amount').textContent, '2.14 / 0.04 mm');
+  assert.equal(panel.querySelector('.cal-detail-station-foot span:last-child').textContent, '100% applied');
+  assert.equal(panel.querySelector('.cal-detail-track').getAttribute('aria-valuenow'), '100');
+  assert.equal(panel.querySelector('.actual-fill').style.width, '100%');
+  assert.doesNotMatch(panel.textContent, /5350%/);
+});
+
+test('historical watering above a zero target says watered without planned target', () => {
+  const actual = 'sensor.rainbird_sprinkle_total_amount_today_front_lawn';
+  const planned = 'sensor.rainbird_forecasted_sprinkle_today_front_lawn';
+  const { card } = atToday('2026-10-29', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_station_sensors: [actual]
+  }));
+  card._historyByDay = { '2026-10-03': { [actual]: 2.14, [planned]: 0 } };
+  atToday('2026-10-29', () => {
+    card.currentMonth = 9;
+    card._selectedCalendarDay = 3;
+    card.render();
+  });
+  const panel = card.shadowRoot.querySelector('.cal-day-details');
+  assert.equal(panel.querySelector('.cal-detail-amount').textContent, '2.14 / 0.00 mm');
+  assert.equal(panel.querySelector('.cal-detail-station-foot span:last-child').textContent,
+    'Watered without planned target');
+  assert.equal(panel.querySelector('.cal-detail-track').getAttribute('role'), null);
+  assert.equal(panel.querySelector('.actual-fill').style.width, '0%');
+});
+
+test('historical zero watering with zero target shows no irrigation planned', () => {
+  const actual = 'sensor.rainbird_sprinkle_total_amount_today_front_lawn';
+  const planned = 'sensor.rainbird_forecasted_sprinkle_today_front_lawn';
+  const { card } = atToday('2026-10-29', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_station_sensors: [actual]
+  }));
+  card._historyByDay = { '2026-10-03': { [actual]: 0, [planned]: 0 } };
+  atToday('2026-10-29', () => {
+    card.currentMonth = 9;
+    card._selectedCalendarDay = 3;
+    card.render();
+  });
+  const panel = card.shadowRoot.querySelector('.cal-day-details');
+  assert.equal(panel.querySelector('.cal-detail-amount').textContent, '0.00 / 0.00 mm');
+  assert.equal(panel.querySelector('.cal-detail-station-foot span:last-child').textContent,
+    'No irrigation planned');
+});
+
 test('calendar day cells have selection state without marking empty cells', () => {
   const { card } = atToday('2026-06-19', () => makeCard({ calendar: true, calendar_history: true }));
   atToday('2026-06-19', () => {
