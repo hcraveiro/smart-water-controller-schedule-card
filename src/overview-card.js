@@ -46,7 +46,7 @@ class IrrigationSummaryCard extends HTMLElement {
     this._hass = hass;
     const commandIds = (this._config?.controllers || (this._config?.mode === 'overview' ? [this._config] : []))
       .flatMap(controller => [this.actionEntity(controller, 'run_cycle'), this.actionEntity(controller, 'stop')]);
-    const ids = [...Object.values(this._config || {}), ...((this._config?.controllers || []).flatMap(item => Object.values(item))), ...((this._config?.water_sensors || []).map(item => item.entity), ...commandIds]
+    const ids = [...Object.values(this._config || {}), ...((this._config?.controllers || []).flatMap(item => Object.values(item))), ...((this._config?.water_sensors || []).map(item => item.entity)), ...commandIds]
       .flatMap(value => Array.isArray(value) ? value : [value])
       .filter(value => typeof value === 'string' &&
         /^(sensor|binary_sensor|input_boolean|switch|button)\./.test(value));
