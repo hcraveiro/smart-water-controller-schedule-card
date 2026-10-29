@@ -1049,12 +1049,64 @@ class IrrigationScheduleCard extends HTMLElement {
     }
 
 
+    _calendarPlannedStationIds() {
+        const actualIds = Array.isArray(this._config?.calendar_station_sensors)
+            ? this._config.calendar_station_sensors : [];
+        const configured = Array.isArray(this._config?.calendar_planned_station_sensors)
+            ? this._config.calendar_planned_station_sensors : [];
+        return actualIds.map((actualId, index) => {
+            const explicit = configured[index];
+            if (typeof explicit === "string" && explicit.startsWith("sensor.")) return explicit;
+            // Existing integration installations publish sibling actual and
+            // planned mm sensors. Never mistake a total for its own plan.
+            if (typeof actualId === "string" && actualId.includes("sprinkle_total_amount_today")) {
+                return actualId.replace("sprinkle_total_amount_today", "forecasted_sprinkle_today");
+            }
+            return null;
+        });
+    }
+
     _calendarSourceIds() {
         const stations = Array.isArray(this._config?.calendar_station_sensors)
             ? this._config.calendar_station_sensors.filter((id) => typeof id === "string" && id.startsWith("sensor."))
             : [];
+        const planned = this._calendarPlannedStationIds().filter(Boolean);
         const rain = this._config?.calendar_rain_sensor;
-        return [...new Set([...stations, ...(typeof rain === "string" && rain.startsWith("sensor.") ? [rain] : [])])];
+        return [...new Set([...stations, ...planned,
+            ...(typeof rain === "string" && rain.startsWith("sensor.") ? [rain] : [])])];
+    }
+
+    _calendarMmPerMinute(stationIndex) {
+        const explicit = Array.isArray(this._config?.calendar_station_mm_per_minute)
+            ? Number(this._config.calendar_station_mm_per_minute[stationIndex]) : NaN;
+        if (Number.isFinite(explicit) && explicit > 0) return explicit;
+
+        // A live planned target is in mm, whereas the monthly schedule stores
+        // minutes. Their ratio gives a nominal irrigation rate for projections.
+        // Never derive a zero rate from a day blocked by recent rain.
+        const currentMonth = new Date().getMonth();
+        const schedule = this.scheduleData?.[currentMonth];
+        const key = "station_" + (stationIndex + 1) + "_minutes";
+        const minutes = Number(schedule?.stations?.[key]) *
+            (schedule?.hours ?? []).filter(Boolean).length;
+        if (!(minutes > 0)) return null;
+
+        const plannedId = this._calendarPlannedStationIds()[stationIndex];
+        if (!plannedId) return null;
+        const live = Number(this._hass?.states?.[plannedId]?.state);
+        if (Number.isFinite(live) && live > 0) return live / minutes;
+
+        // If today's target was blocked, a prior positive target from this
+        // month is a more useful rate than zero, though still an estimate.
+        const prefix = this._calendarKey(new Date().getFullYear(), currentMonth) + "-";
+        const history = Object.entries(this._historyByDay ?? {})
+            .filter(([day]) => day.startsWith(prefix))
+            .sort(([a], [b]) => b.localeCompare(a));
+        for (const [, amounts] of history) {
+            const value = Number(amounts[plannedId]);
+            if (Number.isFinite(value) && value > 0) return value / minutes;
+        }
+        return null;
     }
 
     _calendarKey(year, month) {
@@ -1121,17 +1173,23 @@ class IrrigationScheduleCard extends HTMLElement {
                 end_time: to.toISOString(),
                 statistic_ids: ids,
                 period: "hour",
-                types: ["state"]
+                // Cumulative totals offer 'state'; measurement-class planned
+                // targets expose their values as hourly 'mean' statistics.
+                types: ["state", "mean"]
             });
             for (const id of ids) {
                 const samples = result?.[id];
-                if (!Array.isArray(samples) || !samples.some((item) => Number.isFinite(item.state))) continue;
+                if (!Array.isArray(samples) || !samples.some((item) =>
+                    (item.state != null && Number.isFinite(Number(item.state)))
+                    || (item.mean != null && Number.isFinite(Number(item.mean))))) continue;
                 available.add(id);
                 for (const item of samples) {
-                    const value = item.state;
+                    const value = item.state != null && Number.isFinite(Number(item.state))
+                        ? Number(item.state)
+                        : item.mean != null && Number.isFinite(Number(item.mean))
+                            ? Number(item.mean) : null;
                     const end = new Date(item.end);
-                    if (value === null || value === undefined || !Number.isFinite(Number(value))
-                        || !Number.isFinite(end.getTime())) continue;
+                    if (value === null || !Number.isFinite(end.getTime())) continue;
                     // Statistics contain the state at the END of each period.
                     // Group by the local day containing the end, less one millisecond.
                     const at = new Date(end.getTime() - 1);
@@ -1211,6 +1269,8 @@ class IrrigationScheduleCard extends HTMLElement {
             ? this._config.calendar_station_sensors : [];
         const stations = configuredStations.map((id) =>
             amounts[id] === undefined ? null : Number(amounts[id]));
+        const planned = this._calendarPlannedStationIds().map((id) =>
+            id && amounts[id] !== undefined ? Number(amounts[id]) : null);
         const watered = stations.some((amount) => amount !== null && amount > 0);
         const today = new Date();
         const date = new Date(year, month, day);
@@ -1228,7 +1288,8 @@ class IrrigationScheduleCard extends HTMLElement {
         const probability = Number(daily?.precipitation_probability);
         const forecastRain = !past && daily && Number.isFinite(probability)
             && probability >= (Number.isFinite(probabilityThreshold) ? probabilityThreshold : 50);
-        return { rain, watered, stations, forecastRain, probability, past, known: Object.keys(amounts).some((id) => this._calendarSourceIds().includes(id)) };
+        return { rain, watered, stations, planned, forecastRain, probability, past,
+            known: Object.keys(amounts).some((id) => this._calendarSourceIds().includes(id)) };
     }
 
     _renderCalendarDayDetails(year, projection) {
@@ -1240,9 +1301,13 @@ class IrrigationScheduleCard extends HTMLElement {
         const parts = [];
         if (isHistorical) {
             parts.push('<div>Rainfall: ' + (observations.rain === null ? 'No data' : observations.rain.toFixed(2) + ' mm') + '</div>');
+            parts.push('<div class="cal-day-metric-label">Actual / Planned (mm)</div>');
             observations.stations.forEach((amount, index) => {
+                const plan = observations.planned[index];
+                const actualLabel = amount === null ? 'No data' : amount.toFixed(2);
+                const plannedLabel = plan === null ? 'No data' : plan.toFixed(2);
                 parts.push('<div>' + escapeText(this._getStationLabel("station_" + (index + 1) + "_minutes")) +
-                    ': ' + (amount === null ? 'No data' : amount.toFixed(2) + ' mm') + '</div>');
+                    ': ' + actualLabel + ' / ' + plannedLabel + ' mm</div>');
             });
         } else {
             parts.push('<div>Rain forecast: ' + (observations.forecastRain
@@ -1252,10 +1317,16 @@ class IrrigationScheduleCard extends HTMLElement {
                 const month = this._getMonthSchedule();
                 const stations = Object.entries(month.stations || {}).filter(([, duration]) => Number(duration) > 0);
                 if (stations.length) {
+                    parts.push('<div class="cal-day-metric-label">Projected watering (mm)</div>');
                     const slots = (month.hours || []).filter(Boolean).length;
                     stations.forEach(([station, duration]) => {
+                        const match = String(station).match(/^station_(\d+)_minutes$/);
+                        const index = match ? Number(match[1]) - 1 : -1;
+                        const rate = index >= 0 ? this._calendarMmPerMinute(index) : null;
+                        const amount = rate === null ? 'No plan data'
+                            : (Number(duration) * slots * rate).toFixed(2) + ' mm';
                         parts.push('<div>' + escapeText(this._getStationLabel(station)) +
-                            ': ' + (Number(duration) * slots) + ' minutes planned</div>');
+                            ': ' + amount + ' projected</div>');
                     });
                 } else {
                     parts.push('<div>Irrigation scheduled</div>');
