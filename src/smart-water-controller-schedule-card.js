@@ -2122,6 +2122,7 @@ class IrrigationScheduleCard extends HTMLElement {
                     background: var(--card-background-color, #fff);
                     border: 1px solid var(--divider-color, #e2e5e8);
                     min-width: 0;
+                    display: flex; flex-direction: column;
                 }
                 .cal-detail-station-heading {
                     display: flex; align-items: center; justify-content: space-between;
@@ -2147,7 +2148,7 @@ class IrrigationScheduleCard extends HTMLElement {
                 .cal-detail-track.is-projected {
                     border: 1px dashed var(--info-color, var(--primary-color, #039be5));
                     background: color-mix(in srgb, var(--info-color, #039be5) 7%, var(--card-background-color, #fff));
-                    box-sizing: border-box; height: 11px;
+                    box-sizing: border-box; height: 9px;
                 }
                 .projected-fill {
                     width: 100%;
