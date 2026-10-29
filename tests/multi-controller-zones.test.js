@@ -44,7 +44,7 @@ test('mixed controllers use different duration entities and stop targets', async
     assert.doesNotThrow(()=>f.card.start(f.card.config.zones[1]));
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(f.calls.at(-1)?.data.entity_id,'button.bushes_start');
-    await f.card.stop('Bushes',f.card.config.zones[1]);
+    await f.card.stopAll(f.card.config.zones[1]);
     assert.equal(f.calls.at(-1)?.data.entity_id,'button.bushes_stop');
   } finally {f.close();}
 });
@@ -56,7 +56,8 @@ test('another controller can run while a Rain Bird zone is active, but not two z
     assert.equal(f.card.groupZones(f.card.config.zones[1]).length,1);
     assert.equal(f.card.groupZones(f.card.config.zones[0]).length,1);
     f.card.render();
-    assert.doesNotMatch(f.card.shadowRoot.innerHTML,/data-stop-all/);
+    assert.equal(f.card.shadowRoot.querySelectorAll('[data-stop-all]').length,1);
+    assert.match(f.card.shadowRoot.innerHTML,/Stop All/);
   } finally {f.close();}
 });
 
@@ -67,5 +68,50 @@ test('legacy single-controller configuration retains global stop', () => {
     f.states['sensor.rb_status'].state='Sprinkling';
     f.card.render();
     assert.match(f.card.shadowRoot.innerHTML,/data-stop-all/);
+  } finally {f.close();}
+});
+
+test('Stop All appears beside an active zone, even while collapsed in multi-controller mode', async () => {
+  const f=cardFixture();
+  try {
+    f.states['sensor.rb_status']={state:'Sprinkling',attributes:{irrigation_source:'manual_cycle'}};
+    f.card.hass={states:f.states,callService:async (domain,service,data)=>f.calls.push({domain,service,data})};
+    const button=f.card.shadowRoot.querySelector('.zone.running [data-stop-all]');
+    assert.ok(button,'active station must expose Stop All without expanding');
+    button.click();
+    await new Promise(resolve=>setTimeout(resolve,0));
+    assert.equal(f.calls.at(-1)?.data.entity_id,'button.rb_stop');
+  } finally {f.close();}
+});
+
+test('Stop Station uses only a per-station button; never silently falls back to Stop All', async () => {
+  const f=cardFixture();
+  try {
+    f.states['sensor.rb_status']={state:'Sprinkling',attributes:{irrigation_source:'manual_cycle'}};
+    f.card.hass={states:f.states,callService:async (domain,service,data)=>f.calls.push({domain,service,data})};
+    f.card.openZone=0;
+    f.card.render();
+    assert.equal(f.card.shadowRoot.querySelectorAll('.zone.running [data-action]').length,0);
+
+    f.card.config.zones[0].stop_station='button.rb_stop_zone';
+    f.states['button.rb_stop_zone']={state:'unknown'};
+    f.card.hass={states:f.states,callService:async (domain,service,data)=>f.calls.push({domain,service,data})};
+    const stationButton=f.card.shadowRoot.querySelector('.zone.running [data-action]');
+    assert.ok(stationButton);
+    assert.match(stationButton.textContent,/Stop Station/);
+    stationButton.click();
+    await new Promise(resolve=>setTimeout(resolve,0));
+    assert.equal(f.calls.at(-1)?.data.entity_id,'button.rb_stop_zone');
+    assert.notEqual(f.calls.at(-1)?.data.entity_id,'button.rb_stop');
+  } finally {f.close();}
+});
+
+test('multiple controllers cannot accidentally stop another controller via fallback', () => {
+  const f=cardFixture();
+  try {
+    delete f.card.config.zones[1].stop;
+    f.states['sensor.bushes_status']={state:'Sprinkling'};
+    f.card.hass={states:f.states};
+    assert.equal(f.card.shadowRoot.querySelectorAll('.zone.running [data-stop-all]').length,0);
   } finally {f.close();}
 });
