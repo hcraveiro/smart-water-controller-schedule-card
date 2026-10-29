@@ -40,16 +40,17 @@ test('historical and projected station mini-cards use equal bar heights', () => 
 test('selected-day tablet cards have identical fixed height and mobile fallback', () => {
   const card = source.split('.cal-detail-station {')[1]?.split('}')[0] || '';
   const mobile = source.split('@media (max-width: 350px)')[1] || '';
-  assert.match(card, /height:\s*96px/);
+  assert.match(card, /height:\s*82px/);
   assert.match(card, /box-sizing:\s*border-box/);
   assert.match(card, /justify-content:\s*space-between/);
-  assert.match(mobile, /height:\s*auto;\s*min-height:\s*96px/);
+  assert.match(mobile, /height:\s*auto;\s*min-height:\s*82px/);
   assert.ok(!source.includes('.cal-details-projected .cal-detail-station { height:'));
 });
 
-test('Schedule Card rainfall and forecast summaries share a minimum height', () => {
+test('Schedule Card rainfall and forecast summaries use natural compact height', () => {
   const rain = source.split('.cal-detail-rain {')[1]?.split('}')[0] || '';
-  assert.match(rain, /min-height:\s*84px/);
+  assert.doesNotMatch(rain, /min-height/);
+  assert.match(rain, /padding:\s*7px 11px/);
   assert.match(rain, /box-sizing:\s*border-box/);
   assert.ok(source.includes('Forecast may change this projection'));
   assert.ok(source.includes('Recorded precipitation'));
