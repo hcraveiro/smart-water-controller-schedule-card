@@ -451,7 +451,7 @@ test('selecting a past day reveals actual sensor totals and selecting again clos
   const getDay = () => cells(card).find(cell => Number(cell.querySelector('.cal-day').textContent) === 18);
   atToday('2026-06-19', () => getDay().click());
   assert.match(card.shadowRoot.querySelector('.cal-day-details').textContent, /5.83 mm/);
-  assert.match(card.shadowRoot.querySelector('.cal-day-details').textContent, /4.20 mm/);
+  assert.match(card.shadowRoot.querySelector('.cal-day-details').textContent, /4.20 \/ No data mm/);
   atToday('2026-06-19', () => getDay().click());
   assert.equal(card.shadowRoot.querySelector('.cal-day-details'), null);
 });
