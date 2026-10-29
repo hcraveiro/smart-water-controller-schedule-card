@@ -55,3 +55,12 @@ test('Schedule Card rainfall and forecast summaries share compact minimum height
   assert.ok(source.includes('Forecast may change this projection'));
   assert.ok(source.includes('Recorded precipitation'));
 });
+
+test('sprinkler icons use green consistently in selected-day cards and legend', () => {
+  const station = source.split('.cal-detail-station-name ha-icon {')[1]?.split('}')[0] || '';
+  const empty = source.split('.cal-detail-empty ha-icon {')[1]?.split('}')[0] || '';
+  const legend = source.split('.cal-irrigation {')[1]?.split('}')[0] || '';
+  assert.match(station, /var\(--success-color, #43a047\)/);
+  assert.match(empty, /var\(--success-color, #43a047\)/);
+  assert.match(legend, /var\(--success-color, #43a047\)/);
+});
