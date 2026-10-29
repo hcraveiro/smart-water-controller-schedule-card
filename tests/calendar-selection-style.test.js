@@ -36,3 +36,13 @@ test('historical and projected station mini-cards use equal bar heights', () => 
   assert.match(station, /flex-direction:\s*column/);
   assert.ok(source.includes('projected-fill'));
 });
+
+test('selected-day tablet cards have identical fixed height and mobile fallback', () => {
+  const card = source.split('.cal-detail-station {')[1]?.split('}')[0] || '';
+  const mobile = source.split('@media (max-width: 350px)')[1] || '';
+  assert.match(card, /height:\s*96px/);
+  assert.match(card, /box-sizing:\s*border-box/);
+  assert.match(card, /justify-content:\s*space-between/);
+  assert.match(mobile, /height:\s*auto;\s*min-height:\s*96px/);
+  assert.ok(!source.includes('.cal-details-projected .cal-detail-station { height:'));
+});
