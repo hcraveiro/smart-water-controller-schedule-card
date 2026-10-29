@@ -1393,8 +1393,9 @@ class IrrigationScheduleCard extends HTMLElement {
             (stationCards.length
                 ? '<div class="cal-detail-stations">' + stationCards.join("") + '</div>'
                 : '<div class="cal-detail-empty">' +
-                    (isHistorical ? "No station data available" :
-                        (entry.waters ? "Irrigation scheduled" : "No irrigation currently projected")) +
+                    '<ha-icon icon="mdi:sprinkler-variant" aria-hidden="true"></ha-icon>' +
+                    '<span>' + (isHistorical ? "No station data available" :
+                        (entry.waters ? "Irrigation scheduled" : "No irrigation currently projected")) + '</span>' +
                   '</div>') +
             '<div class="cal-detail-rain">' +
                 '<ha-icon icon="mdi:weather-rainy" aria-hidden="true"></ha-icon>' +
@@ -2139,7 +2140,7 @@ class IrrigationScheduleCard extends HTMLElement {
                     font-size: 12px; font-weight: 600; min-width: 0;
                 }
                 .cal-detail-station-name ha-icon {
-                    color: var(--secondary-text-color); --mdc-icon-size: 16px;
+                    color: var(--success-color, #43a047); --mdc-icon-size: 16px;
                     width: 16px; height: 16px; flex: 0 0 16px;
                 }
                 .cal-detail-amount { font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -2171,9 +2172,14 @@ class IrrigationScheduleCard extends HTMLElement {
                     font-size: 10px; color: var(--secondary-text-color);
                 }
                 .cal-detail-empty {
-                    padding: 13px 10px; border: 1px dashed var(--divider-color);
+                    padding: 10px 11px; border: 1px dashed var(--divider-color);
                     border-radius: 10px; color: var(--secondary-text-color);
                     background: var(--card-background-color, #fff);
+                    display: flex; align-items: center; gap: 9px;
+                }
+                .cal-detail-empty ha-icon {
+                    color: var(--success-color, #43a047); --mdc-icon-size: 18px;
+                    width: 18px; height: 18px; flex: 0 0 18px;
                 }
                 .cal-detail-rain {
                     display: flex; align-items: center; gap: 9px;
