@@ -1312,15 +1312,20 @@ class IrrigationScheduleCard extends HTMLElement {
             const hasAmount = finiteAmount(amount);
             const hasPlan = finiteAmount(planned);
             const usablePlan = hasPlan && planned > 0;
+            // Cap the shown percentage and bar at 100%; keep original
+            // actual/planned millimetres visible without alteration.
             const percent = !projected && hasAmount && usablePlan
-                ? Math.round((amount / planned) * 100) : null;
-            const width = percent === null ? 0 : Math.max(0, Math.min(100, percent));
+                ? Math.min(100, Math.max(0, Math.round((amount / planned) * 100))) : null;
+            const width = percent === null ? 0 : percent;
             const amountLabel = projected
                 ? (hasAmount ? amount.toFixed(2) + " mm" : "No plan data")
                 : formattedAmount(amount) + " / " + formattedAmount(planned) + " mm";
             const secondaryLabel = projected
                 ? (hasAmount ? "Planned · Pending" : "Projection unavailable")
-                : (percent !== null ? percent + "% applied" : "Progress unavailable");
+                : (percent !== null ? percent + "% applied"
+                    : hasAmount && hasPlan && planned === 0
+                        ? (amount > 0 ? "Watered without planned target" : "No irrigation planned")
+                        : "Progress unavailable");
             const trackClass = projected ? "cal-detail-track is-projected"
                 : "cal-detail-track is-actual";
             const fill = projected
