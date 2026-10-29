@@ -191,35 +191,41 @@ shows the current station's end time, not the full cycle completion time.
 Other countdowns retain the existing wording. If the source attribute is missing
 or unrecognised, generic running labels are preserved for backwards compatibility.
 
-### Stop Station and Stop All (V2.0.6b2)
+### Stop and Stop All (V2.0.6b3)
 
-**Stop All** is visible directly on the active zone, even when the zone is
-collapsed. It stops the whole irrigation sequence **for that controller only**,
-including remaining stations. This also works in multi-controller layouts,
-provided the controller-specific stop entity is configured.
+The active station always uses the same **Stop** label in expanded controls
+when its dedicated station-stop entity is available. Stop ends **only that station**.
+During scheduled or manual cycles the controller advances safely to the next station.
 
-**Stop Station** appears in the expanded station controls only when a dedicated
-per-station stop button is available. It stops only that station, then advances
-to the following station in a scheduled or manual cycle. It never falls back
-to the controller's global Stop button.
+**Stop All** is shown directly on the active zone **only for scheduled cycles
+(`automatic`) and Run Cycle (`manual_cycle`)**, even when the zone is collapsed.
+It cancels the entire sequence of that controller. A standalone manual watering
+(`manual`) never displays Stop All.
 
-To explicitly map a per-station button, add `stop_station:` to the zone:
+The card resolves dedicated station-stop entities through an explicit
+`stop_station:` mapping or, when possible, by finding a unique entity with the
+same controller and station name. For example, a legacy start entity
+`button.rainbird_sprinkle_front_lawn_1` is matched with the actual
+`button.exterior_living_room_rainbird_stop_front_lawn_1`.
+Ambiguous matches are rejected rather than controlling the wrong valve.
+
+An optional explicit mapping avoids any dependency on generated entity IDs:
 ```yaml
 zones:
   - name: Front Lawn 1
     status: sensor.rainbird_front_lawn_status_1
     start: button.rainbird_sprinkle_front_lawn_1
-    stop_station: button.rainbird_stop_front_lawn_1
+    stop_station: button.exterior_living_room_rainbird_stop_front_lawn_1
 ```
 
-When an existing `start` entity ID contains `_sprinkle_`, the card also tries
-the corresponding `_stop_` entity if Home Assistant already exposes it.
-Explicit `stop_station` is recommended when entity IDs were renamed.
+For multiple controllers, use the controller-specific `stop:` field on
+non-primary controller zones. The card hides Stop All rather than risk
+stopping another controller.
 
-For multiple controllers, use `stop:` on the non-primary controller's zones to
-avoid routing Stop All to a different controller. The card hides Stop All rather
-than using an unverified fallback. An optional `show_zone_stop_all: false`
-restores the previous footer-based global stop presentation.
+The legacy footer-based Stop All is still available with
+`show_zone_stop_all: false`, but only during cycles.
+The integration must expose the station-specific Stop button
+(Smart Water Controller V1.1.6b3 or later).
 
 ### Multiple controllers in one Zones Card
 
