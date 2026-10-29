@@ -308,6 +308,15 @@ Only one zone expands at a time; all start collapsed. Start, Stop, Stop All and 
 Station entity IDs in the example reflect one RainBird setup. Adapt them to your controller; do not assume the entity IDs are universal.
 
 
+### Consistent rainfall summary heights (V2.0.7b6)
+
+- Fix the selected-day **Schedule Card** panel appearing taller for future
+  dates on Android tablets because the longer `Rain forecast` explanation
+  wraps into multiple lines.
+- Both historical `Rainfall` and future `Rain forecast` summaries now
+  use the same 84px minimum height, and expand if the text requires more.
+- Station cards, irrigation amounts, calculations and forecasts are unchanged.
+
 ### Consistent tablet station mini-card heights (V2.0.7b5)
 
 - Use an identical 96px outer height for historical and projected
