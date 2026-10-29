@@ -308,6 +308,14 @@ Only one zone expands at a time; all start collapsed. Start, Stop, Stop All and 
 Station entity IDs in the example reflect one RainBird setup. Adapt them to your controller; do not assume the entity IDs are universal.
 
 
+### Equal compact rain summary heights (V2.0.7b8)
+
+- Give both historical `Rainfall` and projected `Rain forecast` panels a
+  shared 64px minimum height and 6px vertical padding.
+- Allow either panel to grow if accessibility settings or narrower screens
+  cause additional text wrapping. The Schedule Card station cards remain 82px.
+- Keep all irrigation values, progress bars, and calendar calculations unchanged.
+
 ### More compact day details (V2.0.7b7)
 
 - Reduce historical and projected station mini-cards equally from 96px to 82px.
