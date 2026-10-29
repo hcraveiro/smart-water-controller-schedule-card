@@ -44,7 +44,7 @@ test('mixed controllers use different duration entities and stop targets', async
     assert.doesNotThrow(()=>f.card.start(f.card.config.zones[1]));
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(f.calls.at(-1)?.data.entity_id,'button.bushes_start');
-    await f.card.stop('Bushes',f.card.config.zones[1]);
+    await f.card.stopAll(f.card.config.zones[1]);
     assert.equal(f.calls.at(-1)?.data.entity_id,'button.bushes_stop');
   } finally {f.close();}
 });
@@ -52,11 +52,12 @@ test('mixed controllers use different duration entities and stop targets', async
 test('another controller can run while a Rain Bird zone is active, but not two zones of the same controller', () => {
   const f=cardFixture();
   try {
-    f.states['sensor.rb_status'].state='Sprinkling';
+    f.states['sensor.rb_status']={state:'Sprinkling',attributes:{irrigation_source:'automatic'}};
     assert.equal(f.card.groupZones(f.card.config.zones[1]).length,1);
     assert.equal(f.card.groupZones(f.card.config.zones[0]).length,1);
     f.card.render();
-    assert.doesNotMatch(f.card.shadowRoot.innerHTML,/data-stop-all/);
+    assert.equal(f.card.shadowRoot.querySelectorAll('[data-stop-all]').length,1);
+    assert.match(f.card.shadowRoot.innerHTML,/Stop All/);
   } finally {f.close();}
 });
 
@@ -64,8 +65,133 @@ test('legacy single-controller configuration retains global stop', () => {
   const f=cardFixture();
   try {
     f.card.config.zones.forEach(z=>delete z.controller);
-    f.states['sensor.rb_status'].state='Sprinkling';
+    f.states['sensor.rb_status']={state:'Sprinkling',attributes:{irrigation_source:'automatic'}};
     f.card.render();
     assert.match(f.card.shadowRoot.innerHTML,/data-stop-all/);
+  } finally {f.close();}
+});
+
+test('Stop All appears beside an active zone, even while collapsed in multi-controller mode', async () => {
+  const f=cardFixture();
+  try {
+    f.states['sensor.rb_status']={state:'Sprinkling',attributes:{irrigation_source:'manual_cycle'}};
+    f.card.hass={states:f.states,callService:async (domain,service,data)=>f.calls.push({domain,service,data})};
+    const button=f.card.shadowRoot.querySelector('.zone.running [data-stop-all]');
+    assert.ok(button,'active station must expose Stop All without expanding');
+    button.click();
+    await new Promise(resolve=>setTimeout(resolve,0));
+    assert.equal(f.calls.at(-1)?.data.entity_id,'button.rb_stop');
+  } finally {f.close();}
+});
+
+test('Stop Station uses only a per-station button; never silently falls back to Stop All', async () => {
+  const f=cardFixture();
+  try {
+    f.states['sensor.rb_status']={state:'Sprinkling',attributes:{irrigation_source:'manual_cycle'}};
+    f.card.hass={states:f.states,callService:async (domain,service,data)=>f.calls.push({domain,service,data})};
+    f.card.openZone=0;
+    f.card.render();
+    assert.equal(f.card.shadowRoot.querySelectorAll('.zone.running [data-action]').length,0);
+
+    f.card.config.zones[0].stop_station='button.rb_stop_zone';
+    f.states['button.rb_stop_zone']={state:'unknown'};
+    f.card.hass={states:f.states,callService:async (domain,service,data)=>f.calls.push({domain,service,data})};
+    const stationButton=f.card.shadowRoot.querySelector('.zone.running [data-action]');
+    assert.ok(stationButton);
+    assert.match(stationButton.textContent,/Stop/);
+    assert.doesNotMatch(stationButton.textContent,/Stop Station/);
+    stationButton.click();
+    await new Promise(resolve=>setTimeout(resolve,0));
+    assert.equal(f.calls.at(-1)?.data.entity_id,'button.rb_stop_zone');
+    assert.notEqual(f.calls.at(-1)?.data.entity_id,'button.rb_stop');
+  } finally {f.close();}
+});
+
+test('multiple controllers cannot accidentally stop another controller via fallback', () => {
+  const f=cardFixture();
+  try {
+    delete f.card.config.zones[1].stop;
+    f.states['sensor.bushes_status']={state:'Sprinkling'};
+    f.card.hass={states:f.states};
+    assert.equal(f.card.shadowRoot.querySelectorAll('.zone.running [data-stop-all]').length,0);
+  } finally {f.close();}
+});
+
+test('manual individual irrigation hides Stop All and restores the classic Stop action', async () => {
+  const f=cardFixture();
+  try {
+    f.card.config.zones[0].start='button.rainbird_sprinkle_front_lawn_1';
+    f.card.config.zones[0].name='Front Lawn 1';
+    f.card.config.zones[0].status='sensor.rainbird_front_lawn_status_1';
+    f.states['sensor.rainbird_front_lawn_status_1']={
+      state:'Sprinkling',attributes:{irrigation_source:'manual'}
+    };
+    // The real HA-generated Stop entity includes an extra area/controller prefix.
+    const target='button.exterior_living_room_rainbird_stop_front_lawn_1';
+    f.states[target]={state:'unknown'};
+    f.card.openZone=0;
+    f.card.hass={states:f.states,callService:async (domain,service,data)=>f.calls.push({domain,service,data})};
+    assert.equal(f.card.shadowRoot.querySelectorAll('.zone.running [data-stop-all]').length,0);
+    const stop=f.card.shadowRoot.querySelector('.zone.running [data-action]');
+    assert.ok(stop,'manual watering must keep the red Stop button');
+    assert.equal(stop.textContent.trim(),'Stop');
+    stop.click();
+    await new Promise(resolve=>setTimeout(resolve,0));
+    assert.equal(f.calls.at(-1)?.data.entity_id,target);
+    assert.notEqual(f.calls.at(-1)?.data.entity_id,'button.rb_stop');
+  } finally {f.close();}
+});
+
+test('cycle shows both Stop and Stop All, with different button actions', async () => {
+  const f=cardFixture();
+  try {
+    f.card.config.zones[0].start='button.rainbird_sprinkle_front_lawn_1';
+    f.card.config.zones[0].name='Front Lawn 1';
+    f.card.config.zones[0].status='sensor.rainbird_front_lawn_status_1';
+    f.states['sensor.rainbird_front_lawn_status_1']={
+      state:'Sprinkling',attributes:{irrigation_source:'manual_cycle'}
+    };
+    f.states['button.exterior_living_room_rainbird_stop_front_lawn_1']={state:'unknown'};
+    f.card.openZone=0;
+    f.card.hass={states:f.states,callService:async (domain,service,data)=>f.calls.push({domain,service,data})};
+    assert.ok(f.card.shadowRoot.querySelector('.zone.running [data-stop-all]'));
+    const stop=f.card.shadowRoot.querySelector('.zone.running [data-action]');
+    assert.equal(stop?.textContent.trim(),'Stop');
+    stop.click();
+    await new Promise(resolve=>setTimeout(resolve,0));
+    assert.equal(f.calls.at(-1)?.data.entity_id,'button.exterior_living_room_rainbird_stop_front_lawn_1');
+    f.card.shadowRoot.querySelector('.zone.running [data-stop-all]')?.click();
+    await new Promise(resolve=>setTimeout(resolve,0));
+    assert.equal(f.calls.at(-1)?.data.entity_id,'button.rb_stop');
+  } finally {f.close();}
+});
+
+test('scheduled cycle also shows Stop All and dedicated Stop on the active zone', () => {
+  const f=cardFixture();
+  try {
+    f.card.config.zones[0].start='button.rainbird_sprinkle_front_lawn_1';
+    f.card.config.zones[0].status='sensor.rainbird_front_lawn_status_1';
+    f.states['sensor.rainbird_front_lawn_status_1']={state:'Sprinkling',attributes:{irrigation_source:'automatic'}};
+    f.states['button.exterior_living_room_rainbird_stop_front_lawn_1']={state:'unknown'};
+    f.card.openZone=0;
+    f.card.hass={states:f.states};
+    assert.ok(f.card.shadowRoot.querySelector('.zone.running [data-stop-all]'));
+    assert.equal(f.card.shadowRoot.querySelector('.zone.running [data-action]')?.textContent.trim(),'Stop');
+  } finally {f.close();}
+});
+
+test('station stop resolution rejects ambiguous or wrong-controller matches', () => {
+  const f=cardFixture();
+  try {
+    const zone={start:'button.rainbird_sprinkle_front_lawn_1'};
+    const foreign='button.garden_solem_stop_front_lawn_1';
+    f.states[foreign]={state:'unknown'};
+    assert.equal(f.card.stopStationId(zone),null);
+    const a='button.exterior_living_room_rainbird_stop_front_lawn_1';
+    const b='button.garage_rainbird_stop_front_lawn_1';
+    f.states[a]={state:'unknown'};
+    assert.equal(f.card.stopStationId(zone),a);
+    f.states[b]={state:'unknown'};
+    assert.equal(f.card.stopStationId(zone),null);
   } finally {f.close();}
 });
