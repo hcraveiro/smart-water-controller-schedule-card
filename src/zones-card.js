@@ -36,7 +36,7 @@ class IrrigationZonesCard extends HTMLElement {
       ...(this.config?.zones || []).flatMap(zone => [
         zone.status, zone.today, zone.planned, zone.remaining, zone.valve,
         zone.duration, zone.end_time, zone.stop, zone.stop_station,
-        this.stationStopCandidate(zone),
+        this.stationStopId(zone),
         ...(zone.connection_switches || [])
       ])
     ].filter(Boolean);
@@ -102,8 +102,26 @@ class IrrigationZonesCard extends HTMLElement {
     return start.replace('_sprinkle_', '_stop_');
   }
   stopStationId(zone) {
-    const target = zone?.stop_station || this.stationStopCandidate(zone);
-    return target && this.entity(target) ? target : null;
+    // An explicit mapping is authoritative and never falls back across devices.
+    if (zone?.stop_station) return this.entity(zone.stop_station) ? zone.stop_station : null;
+    const direct = this.stationStopCandidate(zone);
+    if (direct && this.entity(direct)) return direct;
+
+    // HA may generate a longer entity_id than the customised Start button.
+    // Match only a unique Stop button scoped to the same controller and station.
+    const match = /^button[.]([a-z0-9_]+)_sprinkle_([a-z0-9_]+)$/.exec(zone?.start || '');
+    if (!match) return null;
+    const [, controllerKey, stationKey] = match;
+    const stopSuffix = `_stop_${stationKey}`;
+    const matches = Object.keys(this._hass?.states || {}).filter(id => {
+      if (!id.startsWith('button.') || !id.endsWith(stopSuffix)) return false;
+      const prefix = id.slice('button.'.length, -stopSuffix.length);
+      return prefix === controllerKey || prefix.endsWith(`_${controllerKey}`);
+    });
+    return matches.length === 1 ? matches[0] : null;
+  }
+  isCycle(zone) {
+    return ['automatic', 'manual_cycle'].includes(this.irrigationSource(zone));
   }
   endTimeId(zone = null) { return zone?.end_time || this.config.end_time; }
   duration(zone = null) {
@@ -201,7 +219,11 @@ class IrrigationZonesCard extends HTMLElement {
   }
   stopStation(zone) {
     const target = this.stopStationId(zone);
-    if (target) this.press(target, `Stop only ${zone.name} and continue to the next station?`, zone);
+    if (!target) return;
+    const message = this.isCycle(zone)
+      ? `Stop ${zone.name} and continue with the next station?`
+      : `Stop irrigation for ${zone.name}?`;
+    this.press(target, message, zone);
   }
   render() {
     if (!this.config || !this._hass) return;
@@ -211,7 +233,7 @@ class IrrigationZonesCard extends HTMLElement {
     const rows = this.config.zones.map((zone,index) => {
       const running = this.running(zone), expanded = this.openZone === index, progress = this.progress(zone);
       const sourceLabel = running ? this.irrigationLabel(zone) : null;
-      const stopAll = running && this.config.show_zone_stop_all ? this.stopAllId(zone) : null;
+      const stopAll = running && this.isCycle(zone) && this.config.show_zone_stop_all ? this.stopAllId(zone) : null;
       const stopStation = running ? this.stopStationId(zone) : null;
       const duration = this.duration(zone), {min,max} = this.durationLimits(zone);
       const disconnected = this.connectionLost(zone);
@@ -231,11 +253,11 @@ class IrrigationZonesCard extends HTMLElement {
             <button data-step="-1" data-zone="${index}" ${this.busy || disconnected || duration === null || duration <= min ? 'disabled':''}><ha-icon icon="mdi:minus"></ha-icon></button>
             <button data-info="${this.esc(this.durationId(zone))}" class="duration-value">${duration ?? '—'} min</button>
             <button data-step="1" data-zone="${index}" ${this.busy || disconnected || duration === null || duration >= max ? 'disabled':''}><ha-icon icon="mdi:plus"></ha-icon></button>
-          </div></div>${!running || stopStation ? `<button class="action ${running ? 'stop':'start'}" data-action="${index}" ${this.busy || disconnected || (!running && activeInGroup) ? 'disabled':''}><ha-icon icon="mdi:${running ? 'stop':'play'}"></ha-icon>${running ? 'Stop Station':'Start'}</button>` : ''}</div>
+          </div></div>${!running || stopStation ? `<button class="action ${running ? 'stop':'start'}" data-action="${index}" ${this.busy || disconnected || (!running && activeInGroup) ? 'disabled':''}><ha-icon icon="mdi:${running ? 'stop':'play'}"></ha-icon>${running ? 'Stop':'Start'}</button>` : ''}</div>
           ${zone.valve ? `<button class="valve" data-info="${this.esc(zone.valve)}"><ha-icon icon="mdi:valve"></ha-icon>Valve details<ha-icon icon="mdi:chevron-right"></ha-icon></button>` : ''}
         </div>` : ''}</section>`;
     }).join('');
-    const globalStop = !this.config.show_zone_stop_all && !multiController && this.config.show_global_stop && active
+    const globalStop = !this.config.show_zone_stop_all && !multiController && this.config.show_global_stop && active && this.isCycle(active)
       ? `<div class="global"><span><ha-icon icon="mdi:water"></ha-icon> Irrigating: ${this.esc(active.name)}${this.irrigationLabel(active) ? ` · ${this.esc(this.irrigationLabel(active))}` : ''}</span><button data-stop-all ${this.busy || disconnected?'disabled':''}><ha-icon icon="mdi:stop-circle-outline"></ha-icon>Stop All</button></div>` : '';
     const connectionWarning = !multiController && disconnected
       ? `<div class="connection-warning"><ha-icon icon="mdi:wifi-off"></ha-icon><span>Controller unavailable — irrigation controls disabled</span></div>`
