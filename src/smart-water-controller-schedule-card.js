@@ -1393,9 +1393,10 @@ class IrrigationScheduleCard extends HTMLElement {
             (stationCards.length
                 ? '<div class="cal-detail-stations">' + stationCards.join("") + '</div>'
                 : '<div class="cal-detail-empty">' +
-                    (isHistorical ? "No station data available" :
+                    '<ha-icon icon="mdi:sprinkler-variant" aria-hidden="true"></ha-icon>' +
+                    '<span>' + (isHistorical ? "No station data available" :
                         (entry.waters ? "Irrigation scheduled" : "No irrigation currently projected")) +
-                  '</div>') +
+                    '</span></div>') +
             '<div class="cal-detail-rain">' +
                 '<ha-icon icon="mdi:weather-rainy" aria-hidden="true"></ha-icon>' +
                 '<div class="cal-detail-rain-info"><span class="cal-detail-rain-title">' +
@@ -2174,6 +2175,11 @@ class IrrigationScheduleCard extends HTMLElement {
                     padding: 13px 10px; border: 1px dashed var(--divider-color);
                     border-radius: 10px; color: var(--secondary-text-color);
                     background: var(--card-background-color, #fff);
+                    display: flex; align-items: center; gap: 9px;
+                }
+                .cal-detail-empty ha-icon {
+                    color: var(--secondary-text-color); --mdc-icon-size: 18px;
+                    width: 18px; height: 18px; flex: 0 0 18px;
                 }
                 .cal-detail-rain {
                     display: flex; align-items: center; gap: 9px;
