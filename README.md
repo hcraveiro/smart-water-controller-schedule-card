@@ -308,6 +308,14 @@ Only one zone expands at a time; all start collapsed. Start, Stop, Stop All and 
 Station entity IDs in the example reflect one RainBird setup. Adapt them to your controller; do not assume the entity IDs are universal.
 
 
+### Consistent selected-day station card heights (V2.0.7b4)
+
+- Match projected irrigation progress-track height to historical actual progress
+  (9 px each), preserving the dashed and striped projected design.
+- Align the same station mini-card spacing and layout for historical and
+  projected days on narrow/tablet views.
+- No changes to calculations, rainfall cards, sensors, or dashboard settings.
+
 ### Capped irrigation progress (V2.0.7b3)
 
 - Calendar historical **Actual / Planned** amounts remain unchanged, even
