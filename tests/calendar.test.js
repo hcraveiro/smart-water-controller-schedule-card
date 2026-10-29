@@ -464,8 +464,8 @@ test('selecting a future watering day uses mm and never invents a missing projec
   });
   const details = card.shadowRoot.querySelector('.cal-day-details');
   assert.ok(details);
-  assert.match(details.textContent, /Projected watering \(mm\)/);
-  assert.match(details.textContent, /No plan data projected/);
+  assert.match(details.textContent, /Projected irrigation/);
+  assert.match(details.textContent, /No plan data/);
   assert.doesNotMatch(details.textContent, /minutes planned/);
   assert.doesNotMatch(details.textContent, /Rainfall:/);
 });
@@ -493,13 +493,13 @@ test('auto-discovers historic planned sensor with the existing actual naming con
     card.render();
   });
   let text = card.shadowRoot.querySelector('.cal-day-details').textContent;
-  assert.match(text, /Actual \/ Planned \(mm\)/);
+  assert.match(text, /Actual \/ Planned/);
   assert.match(text, /4.20 \/ 4.20 mm/);
   card._selectedCalendarDay = 29;
   atToday('2026-10-29', () => card.render());
   text = card.shadowRoot.querySelector('.cal-day-details').textContent;
   assert.match(text, /2.69 \/ 4.20 mm/);
-  assert.match(text, /Rainfall: 0.00 mm/);
+  assert.equal(card.shadowRoot.querySelector('.cal-detail-rain-value').textContent, '0.00 mm');
 });
 
 test('statistics use mean for measurement targets and state for actual water', async () => {
@@ -557,7 +557,7 @@ test('future projected mm use live planned target and current month schedule rat
     card.render();
   });
   const details = card.shadowRoot.querySelector('.cal-day-details').textContent;
-  assert.match(details, /8.40 mm projected/);
+  assert.match(details, /8.40 mm/);
   assert.doesNotMatch(details, /minutes planned/);
 });
 
@@ -572,7 +572,118 @@ test('future forecast may use an explicit rate when today is blocked by rain', (
     card.render();
   });
   assert.match(card.shadowRoot.querySelector('.cal-day-details').textContent,
-    /8.40 mm projected/);
+    /8.40 mm/);
+});
+
+
+test('historical selected-day details use mini-cards with accurate solid progress bars', () => {
+  const actual1 = 'sensor.rainbird_sprinkle_total_amount_today_front_lawn';
+  const actual2 = 'sensor.rainbird_sprinkle_total_amount_today_side_lawn';
+  const target1 = 'sensor.rainbird_forecasted_sprinkle_today_front_lawn';
+  const target2 = 'sensor.rainbird_forecasted_sprinkle_today_side_lawn';
+  const { card, hass } = atToday('2026-10-29', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_rain_sensor: 'sensor.rain_today',
+    calendar_station_sensors: [actual1, actual2],
+  }));
+  hass.states[actual1] = { state: '2.69' };
+  hass.states[target1] = { state: '4.20' };
+  hass.states[actual2] = { state: '2.39' };
+  hass.states[target2] = { state: '4.20' };
+  hass.states['sensor.rain_today'] = { state: '0' };
+  atToday('2026-10-29', () => {
+    card.currentMonth = 9;
+    card._selectedCalendarDay = 29;
+    card.render();
+  });
+  const panel = card.shadowRoot.querySelector('.cal-day-details');
+  assert.ok(panel.classList.contains('cal-details-actual'));
+  assert.equal(panel.querySelectorAll('.cal-detail-station').length, 2);
+  assert.match(panel.querySelector('.cal-detail-date').textContent, /October 29, 2026/);
+  assert.equal(panel.querySelector('.cal-detail-status').textContent, 'Actual / Planned');
+  assert.deepEqual([...panel.querySelectorAll('.cal-detail-amount')].map(item => item.textContent),
+    ['2.69 / 4.20 mm', '2.39 / 4.20 mm']);
+  const bars = [...panel.querySelectorAll('.cal-detail-track')];
+  assert.equal(bars[0].getAttribute('role'), 'progressbar');
+  assert.equal(bars[0].getAttribute('aria-valuenow'), '64');
+  assert.equal(bars[0].querySelector('.actual-fill').style.width, '64%');
+  assert.equal(bars[1].getAttribute('aria-valuenow'), '57');
+  assert.equal(bars[1].querySelector('.actual-fill').style.width, '57%');
+  assert.deepEqual([...panel.querySelectorAll('.cal-detail-station-foot span:last-child')].map(x => x.textContent),
+    ['64% applied', '57% applied']);
+  assert.equal(panel.querySelector('.cal-detail-rain-title').textContent, 'Rainfall');
+  assert.equal(panel.querySelector('.cal-detail-rain-value').textContent, '0.00 mm');
+});
+
+test('future selected-day details have striped preview bars and forecast rain card', () => {
+  const actual = 'sensor.rainbird_sprinkle_total_amount_today_front_lawn';
+  const planned = 'sensor.rainbird_forecasted_sprinkle_today_front_lawn';
+  const { card, hass } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true,
+    calendar_station_sensors: [actual]
+  }));
+  hass.states[planned] = { state: '8.4' };
+  atToday('2026-06-19', () => {
+    card._selectedCalendarDay = 21;
+    card.render();
+  });
+  const panel = card.shadowRoot.querySelector('.cal-day-details');
+  assert.ok(panel.classList.contains('cal-details-projected'));
+  assert.equal(panel.querySelector('.cal-detail-status').textContent, 'Projected irrigation');
+  assert.equal(panel.querySelector('.cal-detail-station').querySelector('.cal-detail-amount').textContent, '8.40 mm');
+  const bar = panel.querySelector('.cal-detail-track.is-projected');
+  assert.ok(bar);
+  assert.equal(bar.getAttribute('aria-hidden'), 'true');
+  assert.ok(bar.querySelector('.projected-fill'));
+  assert.equal(panel.querySelector('.cal-detail-station-foot span:last-child').textContent, 'Planned · Pending');
+  assert.equal(panel.querySelector('.cal-detail-rain-title').textContent, 'Rain forecast');
+  assert.equal(panel.querySelector('.cal-detail-rain-value').textContent, 'No rain above threshold');
+  assert.equal(panel.querySelectorAll('.actual-fill').length, 0);
+  assert.doesNotMatch(panel.textContent, /\b100% applied\b|minutes planned|mm projected/);
+});
+
+test('unknown historical plan never shows a false progress percentage', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true, calendar_station_sensors: ['sensor.station_1']
+  }));
+  card._historyByDay = { '2026-06-18': { 'sensor.station_1': 2.1 } };
+  atToday('2026-06-19', () => {
+    card._selectedCalendarDay = 18;
+    card.render();
+  });
+  const panel = card.shadowRoot.querySelector('.cal-day-details');
+  assert.equal(panel.querySelector('.cal-detail-amount').textContent, '2.10 / No data mm');
+  assert.equal(panel.querySelector('.cal-detail-station-foot span:last-child').textContent, 'Progress unavailable');
+  assert.equal(panel.querySelector('.cal-detail-track').getAttribute('role'), null);
+  assert.equal(panel.querySelector('.actual-fill').style.width, '0%');
+});
+
+test('projected watering with unknown rate shows empty dashed bar, not fabricated amount', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true, calendar_station_sensors: ['sensor.station_1']
+  }));
+  atToday('2026-06-19', () => {
+    card._selectedCalendarDay = 21;
+    card.render();
+  });
+  const panel = card.shadowRoot.querySelector('.cal-day-details');
+  assert.ok(panel.querySelector('.projected-fill.no-data'));
+  assert.equal(panel.querySelector('.cal-detail-amount').textContent, 'No plan data');
+  assert.equal(panel.querySelector('.cal-detail-station-foot span:last-child').textContent, 'Projection unavailable');
+});
+
+test('selected-day mini-cards escape station names from Home Assistant', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true, calendar_station_sensors: ['sensor.station_1']
+  }, { attributes: { station_names: ['<img src=x onerror=alert(1)>'] } }));
+  card._historyByDay = { '2026-06-18': { 'sensor.station_1': 2.1 } };
+  atToday('2026-06-19', () => {
+    card._selectedCalendarDay = 18;
+    card.render();
+  });
+  const panel = card.shadowRoot.querySelector('.cal-day-details');
+  assert.match(panel.textContent, /<img src=x onerror=alert\(1\)>/);
+  assert.equal(panel.querySelector('.cal-detail-station img'), null);
 });
 
 test('calendar day cells have selection state without marking empty cells', () => {
