@@ -2179,8 +2179,8 @@ class IrrigationScheduleCard extends HTMLElement {
                     display: flex; align-items: center; gap: 9px;
                     border: 1px solid var(--divider-color, #e2e5e8);
                     border-radius: 10px; background: var(--card-background-color, #fff);
-                    padding: 7px 11px; margin-top: 9px; min-width: 0;
-                    box-sizing: border-box;
+                    padding: 6px 11px; margin-top: 9px; min-width: 0;
+                    box-sizing: border-box; min-height: 64px;
                 }
                 .cal-detail-rain ha-icon {
                     color: var(--info-color, #039be5); --mdc-icon-size: 18px;
