@@ -176,6 +176,43 @@ zones:
     valve: switch.rain_bird_sprinkler_3
 ```
 
+### Controller Run Cycle and Stop All (V2.0.6b4)
+
+In the Irrigation Overview, each controller retains its four existing tiles:
+**Next irrigation**, **Last irrigation**, **Current station**, and **Controller**.
+A small action row underneath switches automatically between:
+
+- **Run Cycle / Start** while the controller is idle and on. The description
+  shows the number of stations and the sum of their configured durations in
+  the current month's schedule, read directly from the controller sensor.
+- **Stop All** when that controller is executing a scheduled cycle
+  (`automatic`) or manual Run Cycle (`manual_cycle`). This cancels the full
+  cycle for that controller only.
+- A non-interactive status when a single manual (`manual`) or external irrigation
+  is in progress. Use **Stop** in Irrigation Zones for the individual station.
+
+Both actions ask for confirmation and use the real Home Assistant `button.press`
+service. Buttons are disabled while busy, when the controller is unavailable,
+or when there is no valid command / monthly schedule. Commands are resolved by
+a unique match to the controller's existing HA entities, including generated
+entity IDs. Ambiguous matches are refused.
+
+Explicit mappings are supported if customised entity names cannot be resolved:
+
+```yaml
+type: custom:irrigation-summary-card
+mode: overview
+controllers:
+  - name: Lawn
+    controller: sensor.rainbird_controller_status
+    run_cycle: button.exterior_living_room_rainbird_run_cycle
+    stop: button.rainbird_stop_sprinkle
+    # Keep the controller's existing next, last, station, end and zone_statuses.
+```
+
+The existing dashboard YAML does not need changing when the entities can be
+resolved automatically. Independent controllers have independent controls.
+
 ### Irrigation source indicators (V2.0.6b1)
 
 When a station is running, Overview and Irrigation Zones read the integration's existing
@@ -260,10 +297,11 @@ zones:
     connection_switches: []
 ```
 
-The card's Stop All button is hidden when multiple controllers are configured,
-to avoid silently stopping only one of them. Each expanded zone still has its
-own Stop button. Configurations without per-zone overrides continue to use
-the existing single-controller defaults.
+Stop All is shown within the running zone during a scheduled or manual cycle,
+including multi-controller layouts when a controller-specific stop command is available.
+A manual single-station watering displays only its per-station Stop button.
+Controller-specific `stop:` mappings are recommended for controllers with
+custom or ambiguous entity IDs.
 
 Only one zone expands at a time; all start collapsed. Start, Stop, Stop All and duration adjustments are disabled if **any** entity in `connection_switches` is `unavailable` or `unknown`. These controls use the integration's switch states, not the external connection-loss helper. Start and Stop issue real Home Assistant service calls.
 
