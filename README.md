@@ -308,6 +308,24 @@ Only one zone expands at a time; all start collapsed. Start, Stop, Stop All and 
 Station entity IDs in the example reflect one RainBird setup. Adapt them to your controller; do not assume the entity IDs are universal.
 
 
+### Capped irrigation progress (V2.0.7b3)
+
+- Calendar historical **Actual / Planned** amounts remain unchanged, even
+  when actual irrigation exceeds the target because of weather decisions
+  or manual watering. Both the progress bar and the **% applied** text
+  are limited to **100%** (e.g. `2.14 / 0.04 mm` displays `100% applied`,
+  not `5350% applied`).
+- If a station watered while its planned target was exactly `0 mm`,
+  the calendar shows **Watered without planned target** instead of a
+  mathematically undefined percentage. With zero watering and a zero
+  target it shows **No irrigation planned**.
+- Irrigation Zones already capped progress to 100%; verified with new
+  tests. When irrigation occurred against a `0 mm` target, the Zones
+  expanded panel now shows **Watered without planned target** without
+  manufacturing a progress bar or percentage.
+- No integration changes, new sensors or history storage required.
+  Projected irrigation visuals and values are unchanged.
+
 ### Selected-day mini-cards (V2.0.7b2)
 
 The selected calendar day now uses a compact, theme-aware card layout:
