@@ -456,6 +456,21 @@ test('selecting a past day reveals actual sensor totals and selecting again clos
   assert.equal(card.shadowRoot.querySelector('.cal-day-details'), null);
 });
 
+test('no projected irrigation displays the sprinkler icon in selected-day details', () => {
+  const { card } = atToday('2026-11-24', () => makeCard({
+    calendar: true, calendar_history: true,
+  }));
+  atToday('2026-11-24', () => {
+    card.currentMonth = 10;
+    card._selectedCalendarDay = 24;
+    card.render();
+  });
+  const empty = card.shadowRoot.querySelector('.cal-detail-empty');
+  assert.ok(empty);
+  assert.match(empty.textContent, /No irrigation currently projected/);
+  assert.equal(empty.querySelector('ha-icon')?.getAttribute('icon'), 'mdi:sprinkler-variant');
+});
+
 test('selecting a future watering day uses mm and never invents a missing projected rate', () => {
   const { card } = atToday('2026-06-19', () => makeCard({ calendar: true, calendar_history: true }));
   atToday('2026-06-19', () => {
