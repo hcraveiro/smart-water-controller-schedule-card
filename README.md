@@ -191,6 +191,36 @@ shows the current station's end time, not the full cycle completion time.
 Other countdowns retain the existing wording. If the source attribute is missing
 or unrecognised, generic running labels are preserved for backwards compatibility.
 
+### Stop Station and Stop All (V2.0.6b2)
+
+**Stop All** is visible directly on the active zone, even when the zone is
+collapsed. It stops the whole irrigation sequence **for that controller only**,
+including remaining stations. This also works in multi-controller layouts,
+provided the controller-specific stop entity is configured.
+
+**Stop Station** appears in the expanded station controls only when a dedicated
+per-station stop button is available. It stops only that station, then advances
+to the following station in a scheduled or manual cycle. It never falls back
+to the controller's global Stop button.
+
+To explicitly map a per-station button, add `stop_station:` to the zone:
+```yaml
+zones:
+  - name: Front Lawn 1
+    status: sensor.rainbird_front_lawn_status_1
+    start: button.rainbird_sprinkle_front_lawn_1
+    stop_station: button.rainbird_stop_front_lawn_1
+```
+
+When an existing `start` entity ID contains `_sprinkle_`, the card also tries
+the corresponding `_stop_` entity if Home Assistant already exposes it.
+Explicit `stop_station` is recommended when entity IDs were renamed.
+
+For multiple controllers, use `stop:` on the non-primary controller's zones to
+avoid routing Stop All to a different controller. The card hides Stop All rather
+than using an unverified fallback. An optional `show_zone_stop_all: false`
+restores the previous footer-based global stop presentation.
+
 ### Multiple controllers in one Zones Card
 
 Zones from different integration entries may be displayed together. Assign a
