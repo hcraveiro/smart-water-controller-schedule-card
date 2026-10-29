@@ -2140,7 +2140,7 @@ class IrrigationScheduleCard extends HTMLElement {
                     font-size: 12px; font-weight: 600; min-width: 0;
                 }
                 .cal-detail-station-name ha-icon {
-                    color: var(--secondary-text-color); --mdc-icon-size: 16px;
+                    color: var(--success-color, #43a047); --mdc-icon-size: 16px;
                     width: 16px; height: 16px; flex: 0 0 16px;
                 }
                 .cal-detail-amount { font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -2178,7 +2178,7 @@ class IrrigationScheduleCard extends HTMLElement {
                     display: flex; align-items: center; gap: 9px;
                 }
                 .cal-detail-empty ha-icon {
-                    color: var(--info-color, #039be5); --mdc-icon-size: 18px;
+                    color: var(--success-color, #43a047); --mdc-icon-size: 18px;
                     width: 18px; height: 18px; flex: 0 0 18px;
                 }
                 .cal-detail-rain {
