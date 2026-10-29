@@ -23,6 +23,25 @@ The Schedule Card's original custom-element name remains unchanged for backward 
   in the selected-day Schedule Card details, matching the visual treatment of
   the rain summary. Calculations and calendar projection logic are unchanged.
 
+### Calendar units: mm / minutes (V2.1.0b1)
+
+Select **mm** or **min** directly from a selected calendar day's details.
+The default remains mm, and `calendar_unit: minutes` optionally makes minutes
+the initial display. Rain remains in mm regardless of the irrigation units.
+
+In minutes mode, historical actual/planned seconds come from the integration's
+new `Sprinkle Duration Today` and `Planned Sprinkle Duration Today` sensors,
+via Home Assistant Long-Term Statistics. Sensor names are discovered from the
+existing `calendar_station_sensors`, or overridden using corresponding
+`calendar_duration_station_sensors` and
+`calendar_planned_duration_station_sensors` lists. Durations are formatted
+like `3m 23s / 10m`. Future projections use the monthly schedule's station
+minutes and watering slots (not an inferred mm conversion).
+
+**Requires Smart Water Controller integration V1.1.7b1 or newer** for the
+time history sensors. Days before those sensors were installed display
+`No data`, rather than estimated historical durations.
+
 ## Installation
 
 1. Install **Smart Water Controller Cards** through HACS (Dashboard/Frontend repository). If upgrading the original Smart Water Controller Schedule Card repository, use **Redownload** to select the desired release.

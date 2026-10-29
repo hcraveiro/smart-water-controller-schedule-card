@@ -763,6 +763,60 @@ test('historical zero watering with zero target shows no irrigation planned', ()
     'No irrigation planned');
 });
 
+
+test('calendar minutes mode uses recorded actual/planned duration seconds and formats seconds', () => {
+  const actual = 'sensor.rainbird_sprinkle_total_amount_today_front_lawn';
+  const duration = 'sensor.rainbird_sprinkle_duration_today_front_lawn';
+  const planned = 'sensor.rainbird_planned_sprinkle_duration_today_front_lawn';
+  const { card } = atToday('2026-10-29', () => makeCard({
+    calendar: true, calendar_history: true, calendar_unit: 'minutes',
+    calendar_station_sensors: [actual]
+  }));
+  assert.equal(card._calendarUnit, 'minutes');
+  assert.ok(card._calendarSourceIds().includes(duration));
+  assert.ok(card._calendarSourceIds().includes(planned));
+  card._historyByDay = { '2026-10-28': { [actual]: 2.14, [duration]: 203, [planned]: 600 } };
+  atToday('2026-10-29', () => {
+    card.currentMonth = 9;
+    card._selectedCalendarDay = 28;
+    card.render();
+  });
+  const pane = card.shadowRoot.querySelector('.cal-day-details');
+  assert.equal(pane.querySelector('.cal-detail-amount').textContent, '3m 23s / 10m');
+  assert.equal(pane.querySelector('.cal-detail-station-foot span:last-child').textContent, '34% applied');
+  assert.equal(pane.querySelector('[data-calendar-unit="minutes"]').getAttribute('aria-pressed'), 'true');
+  pane.querySelector('[data-calendar-unit="mm"]').click();
+  assert.equal(card._calendarUnit, 'mm');
+});
+
+test('calendar minutes mode preserves no-data for dates before duration sensors existed', () => {
+  const actual = 'sensor.rainbird_sprinkle_total_amount_today_front_lawn';
+  const { card } = atToday('2026-10-29', () => makeCard({
+    calendar: true, calendar_history: true, calendar_unit: 'minutes',
+    calendar_station_sensors: [actual]
+  }));
+  card._historyByDay = { '2026-10-28': { [actual]: 4.2 } };
+  atToday('2026-10-29', () => {
+    card.currentMonth = 9;
+    card._selectedCalendarDay = 28;
+    card.render();
+  });
+  assert.equal(card.shadowRoot.querySelector('.cal-detail-amount').textContent,
+    'No data / No data');
+});
+
+test('future calendar minutes are derived directly from configured schedule slots', () => {
+  const { card } = atToday('2026-06-19', () => makeCard({
+    calendar: true, calendar_history: true, calendar_unit: 'minutes',
+    calendar_station_sensors: ['sensor.station_1']
+  }));
+  atToday('2026-06-19', () => {
+    card._selectedCalendarDay = 21;
+    card.render();
+  });
+  assert.match(card.shadowRoot.querySelector('.cal-detail-amount').textContent, /20m/);
+});
+
 test('calendar day cells have selection state without marking empty cells', () => {
   const { card } = atToday('2026-06-19', () => makeCard({ calendar: true, calendar_history: true }));
   atToday('2026-06-19', () => {
