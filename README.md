@@ -308,11 +308,65 @@ Only one zone expands at a time; all start collapsed. Start, Stop, Stop All and 
 Station entity IDs in the example reflect one RainBird setup. Adapt them to your controller; do not assume the entity IDs are universal.
 
 
+### Calendar actual vs planned mm (V2.0.7b1)
+
+With `calendar: true` and `calendar_history: true`, selecting a past or
+current day shows **Actual / Planned (mm)** for every station, followed by
+**Rainfall** (always in mm). For example, `1.00 / 4.00 mm` and
+`Rainfall: 3.00 mm` distinguish irrigation actually applied from the
+configured target, even after rain reduces the watering requirement.
+
+- **Actual** reads the existing per-station `Sprinkle Total Amount Today`
+  history (`state` in Home Assistant Long-Term Statistics).
+- **Planned** reads each `Forecasted Sprinkle Today` sensor's recorded
+  hourly `mean` statistic, since those sensors use
+  `state_class: measurement`. The most recent hourly measurement from
+  that local day is used. Today's values come directly from live states.
+- No additional persistence, integration sensor or Recorder retention is
+  required for the mm view. Missing recorded planned values are shown
+  as `No data`, not retroactively guessed from today's schedule.
+- If the actual entity is named
+  `sensor.rainbird_sprinkle_total_amount_today_front_lawn`, the card
+  automatically matches
+  `sensor.rainbird_forecasted_sprinkle_today_front_lawn`. This
+  also supports the `..._station_3` naming convention.
+- For any other entity naming, provide an optional parallel list,
+  in the same order as `calendar_station_sensors`:
+
+```yaml
+calendar_planned_station_sensors:
+  - sensor.rainbird_forecasted_sprinkle_today_front_lawn
+  - sensor.rainbird_forecasted_sprinkle_today_side_lawn
+  - sensor.exterior_living_room_rainbird_forecasted_sprinkle_today_station_3
+```
+
+For a selected **future watering day**, the details now show
+**Projected watering (mm)**, never minutes. The card derives each
+station's nominal mm/min rate from today's planned-mm sensor and the
+current month's scheduled minutes, then multiplies by the selected
+month's scheduled duration. Future values are projections, not promises:
+rain, schedule changes and controller decisions may change them.
+
+If today's watering target is zero because watering was blocked,
+the card can use a previous positive planned-mm measurement from the
+current month. If no reliable rate is available, it shows
+`No plan data` rather than fabricating mm. For controllers that
+cannot derive a rate automatically, configure a per-station rate:
+
+```yaml
+calendar_station_mm_per_minute: [0.42, 0.42, 0.42]
+```
+
+Rainfall remains in **mm** in both historical and projected details.
+This beta implements **mm only**; a later release may add the
+requested minutes-and-seconds display once historical duration
+statistics are available.
+
 ### Experimental calendar rain and irrigation markers
 
 The optional enhanced calendar combines **recorded** daily rain/irrigation for past days with
 **projected** irrigation and daily rain forecasts for future days. These options are off by
-default and currently being tested in PR #7:
+default and available in the current release:
 
 ```yaml
 calendar: true
