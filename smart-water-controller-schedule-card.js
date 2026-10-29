@@ -2776,7 +2776,7 @@ class IrrigationZonesCard extends HTMLElement {
       ...(this.config?.zones || []).flatMap(zone => [
         zone.status, zone.today, zone.planned, zone.remaining, zone.valve,
         zone.duration, zone.end_time, zone.stop, zone.stop_station,
-        this.stationStopId(zone),
+        this.stopStationId(zone),
         ...(zone.connection_switches || [])
       ])
     ].filter(Boolean);
