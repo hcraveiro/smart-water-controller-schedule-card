@@ -2396,6 +2396,7 @@ class IrrigationSummaryCard extends HTMLElement {
     this._expanded = false;
     this._expandedControllers = new Set();
     this._timer = null;
+    this._commandBusy = false;
   }
 
   setConfig(config) {
@@ -2433,10 +2434,12 @@ class IrrigationSummaryCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    const ids = [...Object.values(this._config || {}), ...((this._config?.controllers || []).flatMap(item => Object.values(item))), ...((this._config?.water_sensors || []).map(item => item.entity))]
+    const commandIds = (this._config?.controllers || (this._config?.mode === 'overview' ? [this._config] : []))
+      .flatMap(controller => [this.actionEntity(controller, 'run_cycle'), this.actionEntity(controller, 'stop')]);
+    const ids = [...Object.values(this._config || {}), ...((this._config?.controllers || []).flatMap(item => Object.values(item))), ...((this._config?.water_sensors || []).map(item => item.entity), ...commandIds]
       .flatMap(value => Array.isArray(value) ? value : [value])
       .filter(value => typeof value === 'string' &&
-        /^(sensor|binary_sensor|input_boolean|switch)\./.test(value));
+        /^(sensor|binary_sensor|input_boolean|switch|button)\./.test(value));
     const current = ids.map(id => hass?.states?.[id]);
     if (this._trackedIds?.length === ids.length &&
         ids.every((id, index) =>
@@ -2472,6 +2475,91 @@ class IrrigationSummaryCard extends HTMLElement {
       if (typeof source === 'string' && source.trim()) return source.trim().toLowerCase();
     }
     return null;
+  }
+  actionEntity(controller, action) {
+    // Explicit mappings take precedence and are never guessed across controllers.
+    const configured = action === 'run_cycle' ? controller.run_cycle : controller.stop;
+    if (configured !== undefined) {
+      return typeof configured === 'string' && this.entity(configured) ? configured : null;
+    }
+    const prefix = action === 'run_cycle' ? 'Run Cycle' : 'Stop sprinkle';
+    const entity = this.entity(controller.controller);
+    const friendly = String(entity?.attributes?.friendly_name || '').replace(/ Controller Status$/i, '').trim();
+    const names = [friendly, controller.name].filter(Boolean).map(name => String(name).toLowerCase());
+    const idPrefix = String(controller.controller || '').replace(/^sensor\./, '').replace(/_controller_status(?:_\d+)?$/, '');
+    const aliases = [idPrefix, idPrefix.split('_').at(-1), ...names.map(name => name.replace(/[^a-z0-9]+/g, '_'))]
+      .filter(value => value && value.length > 2);
+    const suffix = action === 'run_cycle' ? '_run_cycle' : '_stop_sprinkle';
+    const candidates = Object.entries(this._hass?.states || {})
+      .filter(([id]) => id.startsWith('button.') && id.endsWith(suffix))
+      .filter(([id, button]) => {
+        const entityName = String(button.attributes?.friendly_name || '').toLowerCase();
+        if (names.some(name => entityName === `${name} ${prefix.toLowerCase()}`)) return true;
+        const base = id.slice('button.'.length, -suffix.length);
+        return aliases.some(alias => base === alias || base.endsWith(`_${alias}`));
+      }).map(([id]) => id);
+    // Refuse ambiguous inferred mappings instead of stopping a different controller.
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+  cycleDuration(controller) {
+    const schedule = this.entity(controller.controller)?.attributes?.schedule;
+    const month = Array.isArray(schedule) ? schedule[new Date().getMonth()] : null;
+    const minutes = Object.entries(month?.stations || {})
+      .filter(([key]) => /^station_\d+_minutes$/.test(key))
+      .map(([, value]) => Number(value))
+      .filter(value => Number.isFinite(value) && value > 0);
+    if (!minutes.length) return null;
+    return {stations: minutes.length, totalMinutes: minutes.reduce((total, value) => total + value, 0)};
+  }
+  cycleAction(controller, active, source) {
+    const isCycle = active && (source === 'manual_cycle' || source === 'automatic');
+    const isManual = active && !isCycle;
+    if (isManual) return `<div class="cycle-action neutral"><div class="cycle-copy"><strong>${this.escape(this.irrigationLabel(source) || 'Irrigation active')}</strong><small>Stop the station from Irrigation Zones</small></div></div>`;
+    const duration = this.cycleDuration(controller);
+    const run = this.actionEntity(controller, 'run_cycle');
+    const stop = this.actionEntity(controller, 'stop');
+    const controllerOn = this.state(controller.controller).toLowerCase() === 'on';
+    const lost = (controller.connection_switches || []).some(id => !this.valid(this.state(id)));
+    const disabled = this._commandBusy || lost || (isCycle ? !stop : !controllerOn || !run || !duration);
+    const label = isCycle ? 'Stop All' : 'Run Cycle';
+    const desc = isCycle ? 'Stop the complete irrigation cycle'
+      : duration ? `${duration.stations} ${duration.stations === 1 ? 'station' : 'stations'} · ${duration.totalMinutes} min total`
+        : 'No station durations configured this month';
+    return `<div class="cycle-action ${isCycle ? 'cycle-stop' : 'cycle-ready'}">
+      <div class="cycle-copy"><strong>${label}</strong><small>${this.escape(desc)}</small></div>
+      <button class="cycle-button" data-cycle-action="${isCycle ? 'stop' : 'run_cycle'}" data-cycle-controller="${this.escape(controller.controller)}"
+        ${disabled ? 'disabled' : ''}><ha-icon icon="mdi:${isCycle ? 'stop-circle-outline' : 'play'}"></ha-icon>${isCycle ? 'Stop All' : 'Start'}</button>
+    </div>`;
+  }
+  async executeCycleAction(controllerId, action) {
+    if (this._commandBusy || this._config?.mode !== 'overview') return;
+    const controllers = this._config.controllers || [this._config];
+    const controller = controllers.find(item => item.controller === controllerId);
+    if (!controller) return;
+    const states = (controller.zone_statuses || []).map(id => this.state(id).toLowerCase());
+    const active = states.includes('sprinkling');
+    const source = active ? this.irrigationSource(controller) : null;
+    if (action === 'run_cycle' && (active || this.state(controller.controller).toLowerCase() !== 'on' || !this.cycleDuration(controller))) return;
+    if (action === 'stop' && (!active || !['manual_cycle','automatic'].includes(source))) return;
+    if ((controller.connection_switches || []).some(id => !this.valid(this.state(id)))) return;
+    const target = this.actionEntity(controller, action);
+    if (!target) return;
+    const label = controller.name || this.entity(controller.controller)?.attributes?.friendly_name || controller.controller;
+    const message = action === 'stop'
+      ? `Stop the entire irrigation cycle on ${label}?`
+      : `Run the complete configured watering cycle on ${label}, regardless of rainfall or water already applied?`;
+    if (!confirm(message)) return;
+    this._commandBusy = true;
+    this.render();
+    try {
+      await this._hass.callService('button', 'press', {entity_id: target});
+    } catch (error) {
+      console.error('Failed to execute irrigation cycle command:', error);
+      if (typeof alert === 'function') alert('Unable to execute irrigation command.');
+    } finally {
+      this._commandBusy = false;
+      this.render();
+    }
   }
   irrigationLabel(source) {
     return {
@@ -2566,7 +2654,7 @@ class IrrigationSummaryCard extends HTMLElement {
     const station = this.state(c.station);
     const nextTime = Date.parse(this.state(c.next));
     const lastTime = Date.parse(this.state(c.last));
-    return { ...c, controller, connectionLost, active, available, station, source,
+    return { ...c, controller, controllerEntity: c.controller, connectionLost, active, available, station, source,
       nextTime: Number.isFinite(nextTime) && nextTime >= Date.now() ? nextTime : null,
       lastTime: Number.isFinite(lastTime) && lastTime <= Date.now() ? lastTime : null };
   }
@@ -2604,6 +2692,7 @@ class IrrigationSummaryCard extends HTMLElement {
         </div>` : ''}
         ${c.active && this.irrigationLabel(c.source) ? `<small class="controller-source">${this.escape(this.irrigationLabel(c.source))}</small>` : ''}
         ${c.active ? `<small class="controller-countdown" data-live-controller="${index}">${this.escape(this.countdownFor(c.end, c.source))}</small>` : ''}
+        ${expanded ? this.cycleAction({...c, controller: c.controllerEntity}, c.active, c.source) : ''}
       </section>`;
     }).join('');
     return summary + sections;
@@ -2637,7 +2726,7 @@ class IrrigationSummaryCard extends HTMLElement {
       ${this.chip('Last irrigation',this.timeSince(c.last),'mdi:history',c.last)}
       ${this.chip('Controller',controller,'mdi:water-pump',c.controller)}
       ${this.chip('Current station',this.state(c.station),'mdi:sprinkler',c.station)}
-    </div>`;
+    </div>${this.cycleAction(c, active, source)}`;
   }
   renderWeather() {
     const c = this._config;
@@ -2694,6 +2783,16 @@ class IrrigationSummaryCard extends HTMLElement {
       .controller-state{font-size:12px;font-weight:650;color:var(--accent-green)}.controller-state.off{color:var(--secondary-text-color)}.controller-state.error{color:var(--accent-red)}.controller-state.active{color:var(--accent-blue)}
       .controller-source{display:block;margin-top:9px;color:var(--secondary-text-color);font-size:12px}
       .controller-countdown{display:block;margin-top:5px;color:var(--accent-blue);font-weight:650;font-variant-numeric:tabular-nums}
+      .cycle-action{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:11px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--accent-green) 9%,transparent)}
+      .cycle-action.cycle-stop{background:color-mix(in srgb,var(--accent-red) 8%,transparent)}
+      .cycle-action.neutral{background:var(--secondary-background-color,rgba(128,128,128,.08))}
+      .cycle-copy{display:flex;flex:1;flex-direction:column;gap:4px;min-width:0}
+      .cycle-copy strong{font-size:13px;font-weight:700}
+      .cycle-copy small{font-size:11px;color:var(--secondary-text-color);line-height:1.3}
+      .cycle-button{display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;border-radius:10px;padding:10px 12px;background:color-mix(in srgb,var(--accent-green) 17%,transparent);color:var(--accent-green);font-size:12px;font-weight:700;flex:none}
+      .cycle-stop .cycle-button{background:color-mix(in srgb,var(--accent-red) 18%,transparent);color:var(--accent-red)}
+      .cycle-button ha-icon{--mdc-icon-size:17px}
+      .cycle-button:disabled{opacity:.4;cursor:not-allowed}
       .overview-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:10px}
       .chip{display:flex;align-items:center;gap:9px;padding:11px 9px;border-radius:12px;background:var(--secondary-background-color,rgba(128,128,128,.09));min-width:0;min-height:65px}
       .chip-icon {height:35px;width:35px;flex:none;display:grid;place-items:center;border-radius:10px;background:color-mix(in srgb,var(--accent-blue) 10%,transparent);color:var(--accent-blue)}
@@ -2722,6 +2821,9 @@ class IrrigationSummaryCard extends HTMLElement {
       if (this._expandedControllers.has(index)) this._expandedControllers.delete(index);
       else this._expandedControllers.add(index);
       this.render();
+    }));
+    this.shadowRoot.querySelectorAll('[data-cycle-action]').forEach(button => button.addEventListener('click', () => {
+      void this.executeCycleAction(button.dataset.cycleController, button.dataset.cycleAction);
     }));
     this.shadowRoot.querySelector('[data-toggle]')?.addEventListener('click', () => {
       this._expanded = !this._expanded;
