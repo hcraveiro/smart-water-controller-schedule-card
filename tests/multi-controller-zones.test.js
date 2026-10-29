@@ -195,3 +195,61 @@ test('station stop resolution rejects ambiguous or wrong-controller matches', ()
     assert.equal(f.card.stopStationId(zone),null);
   } finally {f.close();}
 });
+
+
+test('Zones caps displayed and bar progress at 100% when actual exceeds the plan', () => {
+  const f = cardFixture();
+  try {
+    const zone = f.card.config.zones[0];
+    zone.today = 'sensor.rb_applied';
+    zone.planned = 'sensor.rb_plan';
+    f.states[zone.today] = { state: '2.14', attributes: { unit_of_measurement: 'mm' } };
+    f.states[zone.planned] = { state: '0.04', attributes: { unit_of_measurement: 'mm' } };
+    f.card.openZone = 0;
+    f.card.hass = {states: f.states};
+    assert.equal(f.card.progress(zone), 100);
+    const panel = f.card.shadowRoot.querySelector('.zone .details');
+    assert.ok(panel);
+    assert.match(panel.querySelector('.metrics').textContent, /2.14 mm/);
+    assert.match(panel.querySelector('.metrics').textContent, /0.04 mm/);
+    assert.equal(panel.querySelector('.progress-label strong').textContent, '100%');
+    assert.equal(panel.querySelector('.progress > div').style.width, '100%');
+  } finally { f.close(); }
+});
+
+test('Zones clearly indicates actual watering when target is exactly zero', () => {
+  const f = cardFixture();
+  try {
+    const zone = f.card.config.zones[0];
+    zone.today = 'sensor.rb_applied';
+    zone.planned = 'sensor.rb_plan';
+    f.states[zone.today] = { state: '2.14', attributes: { unit_of_measurement: 'mm' } };
+    f.states[zone.planned] = { state: '0', attributes: { unit_of_measurement: 'mm' } };
+    f.card.openZone = 0;
+    f.card.hass = {states: f.states};
+    assert.equal(f.card.progress(zone), null);
+    assert.equal(f.card.unplannedWatering(zone), true);
+    const panel = f.card.shadowRoot.querySelector('.zone .details');
+    assert.match(panel.querySelector('.metrics').textContent, /2.14 mm/);
+    assert.match(panel.querySelector('.metrics').textContent, /0 mm/);
+    assert.equal(panel.querySelector('.progress-label strong').textContent,
+      'Watered without planned target');
+    assert.equal(panel.querySelector('.progress'), null);
+  } finally { f.close(); }
+});
+
+test('Zones does not invent progress when no water was applied and the target is zero', () => {
+  const f = cardFixture();
+  try {
+    const zone = f.card.config.zones[0];
+    zone.today = 'sensor.rb_applied';
+    zone.planned = 'sensor.rb_plan';
+    f.states[zone.today] = { state: '0' };
+    f.states[zone.planned] = { state: '0' };
+    f.card.openZone = 0;
+    f.card.hass = {states: f.states};
+    assert.equal(f.card.progress(zone), null);
+    assert.equal(f.card.unplannedWatering(zone), false);
+    assert.equal(f.card.shadowRoot.querySelector('.zone .progress-label'), null);
+  } finally { f.close(); }
+});

@@ -1049,12 +1049,64 @@ class IrrigationScheduleCard extends HTMLElement {
     }
 
 
+    _calendarPlannedStationIds() {
+        const actualIds = Array.isArray(this._config?.calendar_station_sensors)
+            ? this._config.calendar_station_sensors : [];
+        const configured = Array.isArray(this._config?.calendar_planned_station_sensors)
+            ? this._config.calendar_planned_station_sensors : [];
+        return actualIds.map((actualId, index) => {
+            const explicit = configured[index];
+            if (typeof explicit === "string" && explicit.startsWith("sensor.")) return explicit;
+            // Existing integration installations publish sibling actual and
+            // planned mm sensors. Never mistake a total for its own plan.
+            if (typeof actualId === "string" && actualId.includes("sprinkle_total_amount_today")) {
+                return actualId.replace("sprinkle_total_amount_today", "forecasted_sprinkle_today");
+            }
+            return null;
+        });
+    }
+
     _calendarSourceIds() {
         const stations = Array.isArray(this._config?.calendar_station_sensors)
             ? this._config.calendar_station_sensors.filter((id) => typeof id === "string" && id.startsWith("sensor."))
             : [];
+        const planned = this._calendarPlannedStationIds().filter(Boolean);
         const rain = this._config?.calendar_rain_sensor;
-        return [...new Set([...stations, ...(typeof rain === "string" && rain.startsWith("sensor.") ? [rain] : [])])];
+        return [...new Set([...stations, ...planned,
+            ...(typeof rain === "string" && rain.startsWith("sensor.") ? [rain] : [])])];
+    }
+
+    _calendarMmPerMinute(stationIndex) {
+        const explicit = Array.isArray(this._config?.calendar_station_mm_per_minute)
+            ? Number(this._config.calendar_station_mm_per_minute[stationIndex]) : NaN;
+        if (Number.isFinite(explicit) && explicit > 0) return explicit;
+
+        // A live planned target is in mm, whereas the monthly schedule stores
+        // minutes. Their ratio gives a nominal irrigation rate for projections.
+        // Never derive a zero rate from a day blocked by recent rain.
+        const currentMonth = new Date().getMonth();
+        const schedule = this.scheduleData?.[currentMonth];
+        const key = "station_" + (stationIndex + 1) + "_minutes";
+        const minutes = Number(schedule?.stations?.[key]) *
+            (schedule?.hours ?? []).filter(Boolean).length;
+        if (!(minutes > 0)) return null;
+
+        const plannedId = this._calendarPlannedStationIds()[stationIndex];
+        if (!plannedId) return null;
+        const live = Number(this._hass?.states?.[plannedId]?.state);
+        if (Number.isFinite(live) && live > 0) return live / minutes;
+
+        // If today's target was blocked, a prior positive target from this
+        // month is a more useful rate than zero, though still an estimate.
+        const prefix = this._calendarKey(new Date().getFullYear(), currentMonth) + "-";
+        const history = Object.entries(this._historyByDay ?? {})
+            .filter(([day]) => day.startsWith(prefix))
+            .sort(([a], [b]) => b.localeCompare(a));
+        for (const [, amounts] of history) {
+            const value = Number(amounts[plannedId]);
+            if (Number.isFinite(value) && value > 0) return value / minutes;
+        }
+        return null;
     }
 
     _calendarKey(year, month) {
@@ -1121,17 +1173,23 @@ class IrrigationScheduleCard extends HTMLElement {
                 end_time: to.toISOString(),
                 statistic_ids: ids,
                 period: "hour",
-                types: ["state"]
+                // Cumulative totals offer 'state'; measurement-class planned
+                // targets expose their values as hourly 'mean' statistics.
+                types: ["state", "mean"]
             });
             for (const id of ids) {
                 const samples = result?.[id];
-                if (!Array.isArray(samples) || !samples.some((item) => Number.isFinite(item.state))) continue;
+                if (!Array.isArray(samples) || !samples.some((item) =>
+                    (item.state != null && Number.isFinite(Number(item.state)))
+                    || (item.mean != null && Number.isFinite(Number(item.mean))))) continue;
                 available.add(id);
                 for (const item of samples) {
-                    const value = item.state;
+                    const value = item.state != null && Number.isFinite(Number(item.state))
+                        ? Number(item.state)
+                        : item.mean != null && Number.isFinite(Number(item.mean))
+                            ? Number(item.mean) : null;
                     const end = new Date(item.end);
-                    if (value === null || value === undefined || !Number.isFinite(Number(value))
-                        || !Number.isFinite(end.getTime())) continue;
+                    if (value === null || !Number.isFinite(end.getTime())) continue;
                     // Statistics contain the state at the END of each period.
                     // Group by the local day containing the end, less one millisecond.
                     const at = new Date(end.getTime() - 1);
@@ -1211,6 +1269,8 @@ class IrrigationScheduleCard extends HTMLElement {
             ? this._config.calendar_station_sensors : [];
         const stations = configuredStations.map((id) =>
             amounts[id] === undefined ? null : Number(amounts[id]));
+        const planned = this._calendarPlannedStationIds().map((id) =>
+            id && amounts[id] !== undefined ? Number(amounts[id]) : null);
         const watered = stations.some((amount) => amount !== null && amount > 0);
         const today = new Date();
         const date = new Date(year, month, day);
@@ -1228,48 +1288,123 @@ class IrrigationScheduleCard extends HTMLElement {
         const probability = Number(daily?.precipitation_probability);
         const forecastRain = !past && daily && Number.isFinite(probability)
             && probability >= (Number.isFinite(probabilityThreshold) ? probabilityThreshold : 50);
-        return { rain, watered, stations, forecastRain, probability, past, known: Object.keys(amounts).some((id) => this._calendarSourceIds().includes(id)) };
+        return { rain, watered, stations, planned, forecastRain, probability, past,
+            known: Object.keys(amounts).some((id) => this._calendarSourceIds().includes(id)) };
     }
 
     _renderCalendarDayDetails(year, projection) {
         const day = this._selectedCalendarDay;
         const entry = projection.days.find((value) => value.day === day);
         if (!entry) return "";
+
         const observations = this._calendarObservations(year, this.currentMonth, day);
         const isHistorical = this._config?.calendar_history === true && (entry.isPast || entry.isToday);
-        const parts = [];
-        if (isHistorical) {
-            parts.push('<div>Rainfall: ' + (observations.rain === null ? 'No data' : observations.rain.toFixed(2) + ' mm') + '</div>');
-            observations.stations.forEach((amount, index) => {
-                parts.push('<div>' + escapeText(this._getStationLabel("station_" + (index + 1) + "_minutes")) +
-                    ': ' + (amount === null ? 'No data' : amount.toFixed(2) + ' mm') + '</div>');
-            });
-        } else {
-            parts.push('<div>Rain forecast: ' + (observations.forecastRain
-                ? observations.probability + '% probability'
-                : 'No rain forecast above the configured threshold') + '</div>');
-            if (entry.waters) {
-                const month = this._getMonthSchedule();
-                const stations = Object.entries(month.stations || {}).filter(([, duration]) => Number(duration) > 0);
-                if (stations.length) {
-                    const slots = (month.hours || []).filter(Boolean).length;
-                    stations.forEach(([station, duration]) => {
-                        parts.push('<div>' + escapeText(this._getStationLabel(station)) +
-                            ': ' + (Number(duration) * slots) + ' minutes planned</div>');
-                    });
-                } else {
-                    parts.push('<div>Irrigation scheduled</div>');
-                }
-            } else {
-                parts.push('<div>No irrigation currently projected</div>');
-            }
-        }
-        return '<div class="cal-day-details"><strong>' +
-            escapeText(new Date(year, this.currentMonth, day).toLocaleDateString(
-                this._hass?.locale?.language || undefined, { day: "numeric", month: "long", year: "numeric" })) +
-            '</strong>' + parts.join("") + '</div>';
-    }
+        const date = escapeText(new Date(year, this.currentMonth, day).toLocaleDateString(
+            this._hass?.locale?.language || undefined,
+            { day: "numeric", month: "long", year: "numeric" }
+        ));
+        const status = isHistorical ? "Actual / Planned" : "Projected irrigation";
+        const finiteAmount = (amount) => amount !== null && Number.isFinite(amount) && amount >= 0;
+        const formattedAmount = (amount) => finiteAmount(amount) ? amount.toFixed(2) : "No data";
 
+        const stationCard = (station, amount, planned, projected) => {
+            const name = escapeText(this._getStationLabel(station));
+            const hasAmount = finiteAmount(amount);
+            const hasPlan = finiteAmount(planned);
+            const usablePlan = hasPlan && planned > 0;
+            // Cap the shown percentage and bar at 100%; keep original
+            // actual/planned millimetres visible without alteration.
+            const percent = !projected && hasAmount && usablePlan
+                ? Math.min(100, Math.max(0, Math.round((amount / planned) * 100))) : null;
+            const width = percent === null ? 0 : percent;
+            const amountLabel = projected
+                ? (hasAmount ? amount.toFixed(2) + " mm" : "No plan data")
+                : formattedAmount(amount) + " / " + formattedAmount(planned) + " mm";
+            const secondaryLabel = projected
+                ? (hasAmount ? "Planned · Pending" : "Projection unavailable")
+                : (percent !== null ? percent + "% applied"
+                    : hasAmount && hasPlan && planned === 0
+                        ? (amount > 0 ? "Watered without planned target" : "No irrigation planned")
+                        : "Progress unavailable");
+            const trackClass = projected ? "cal-detail-track is-projected"
+                : "cal-detail-track is-actual";
+            const fill = projected
+                ? '<span class="cal-detail-fill projected-fill' +
+                    (hasAmount ? '' : ' no-data') + '"></span>'
+                : '<span class="cal-detail-fill actual-fill" style="width:' + width + '%"></span>';
+            const progressAttributes = !projected && percent !== null
+                ? ' role="progressbar" aria-label="' + escapeAttribute(
+                    this._getStationLabel(station) + " applied relative to plan") +
+                    '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + width + '"'
+                : ' aria-hidden="true"';
+
+            return '<div class="cal-detail-station">' +
+                '<div class="cal-detail-station-heading">' +
+                    '<span class="cal-detail-station-name"><ha-icon icon="mdi:sprinkler-variant" aria-hidden="true"></ha-icon>' +
+                        name + '</span>' +
+                    '<span class="cal-detail-amount">' + amountLabel + '</span>' +
+                '</div>' +
+                '<div class="' + trackClass + '"' + progressAttributes + '>' + fill + '</div>' +
+                '<div class="cal-detail-station-foot">' +
+                    '<span>' + (projected ? 'Scheduled amount' : 'Applied') + '</span>' +
+                    '<span>' + secondaryLabel + '</span>' +
+                '</div>' +
+            '</div>';
+        };
+
+        const stationCards = [];
+        if (isHistorical) {
+            observations.stations.forEach((actual, index) => {
+                stationCards.push(stationCard(
+                    "station_" + (index + 1) + "_minutes",
+                    actual, observations.planned[index] ?? null, false
+                ));
+            });
+        } else if (entry.waters) {
+            const month = this._getMonthSchedule();
+            const slots = (month.hours || []).filter(Boolean).length;
+            Object.entries(month.stations || {})
+                .filter(([, duration]) => Number(duration) > 0)
+                .forEach(([station, duration]) => {
+                    const match = String(station).match(/^station_(\d+)_minutes$/);
+                    const index = match ? Number(match[1]) - 1 : -1;
+                    const rate = index >= 0 ? this._calendarMmPerMinute(index) : null;
+                    const amount = rate === null ? null : Number(duration) * slots * rate;
+                    stationCards.push(stationCard(station, amount, null, true));
+                });
+        }
+
+        const rainLabel = isHistorical ? "Rainfall" : "Rain forecast";
+        const rainValue = isHistorical
+            ? (finiteAmount(observations.rain) ? observations.rain.toFixed(2) + " mm" : "No data")
+            : (observations.forecastRain
+                ? observations.probability + "% probability"
+                : "No rain above threshold");
+        const rainDescription = isHistorical
+            ? "Recorded precipitation" : "Forecast may change this projection";
+
+        return '<div class="cal-day-details ' +
+                (isHistorical ? 'cal-details-actual' : 'cal-details-projected') + '">' +
+            '<div class="cal-detail-header">' +
+                '<div class="cal-detail-date"><ha-icon icon="mdi:calendar-month" aria-hidden="true"></ha-icon>' +
+                    '<strong>' + date + '</strong></div>' +
+                '<span class="cal-detail-status">' + status + '</span>' +
+            '</div>' +
+            (stationCards.length
+                ? '<div class="cal-detail-stations">' + stationCards.join("") + '</div>'
+                : '<div class="cal-detail-empty">' +
+                    (isHistorical ? "No station data available" :
+                        (entry.waters ? "Irrigation scheduled" : "No irrigation currently projected")) +
+                  '</div>') +
+            '<div class="cal-detail-rain">' +
+                '<ha-icon icon="mdi:weather-rainy" aria-hidden="true"></ha-icon>' +
+                '<div class="cal-detail-rain-info"><span class="cal-detail-rain-title">' +
+                    rainLabel + '</span><span class="cal-detail-rain-note">' +
+                    rainDescription + '</span></div>' +
+                '<span class="cal-detail-rain-value">' + rainValue + '</span>' +
+            '</div>' +
+        '</div>';
+    }
     _renderCalendar(monthSchedule) {
         const year = this._getDisplayYear();
         const context = this._getIntervalContext();
@@ -1958,8 +2093,109 @@ class IrrigationScheduleCard extends HTMLElement {
                     background: var(--primary-color);
                 }
 
-                .cal-day-details { padding: 10px 12px; margin-top: 12px; border-radius: 8px; background: var(--secondary-background-color); font-size: 12px; line-height: 1.7; }
-                .cal-day-details strong { display: block; font-size: 13px; margin-bottom: 4px; }
+                .cal-day-details {
+                    padding: 12px; margin-top: 12px; border-radius: 12px;
+                    background: var(--secondary-background-color);
+                    color: var(--primary-text-color); font-size: 12px; line-height: 1.4;
+                }
+                .cal-detail-header {
+                    display: flex; align-items: center; justify-content: space-between;
+                    flex-wrap: wrap; column-gap: 10px; row-gap: 6px; margin-bottom: 11px;
+                }
+                .cal-detail-date {
+                    display: inline-flex; align-items: center; gap: 7px; min-width: 0;
+                }
+                .cal-detail-date ha-icon {
+                    color: var(--secondary-text-color); --mdc-icon-size: 17px;
+                    width: 17px; height: 17px; flex: 0 0 17px;
+                }
+                .cal-detail-date strong { font-size: 13px; font-weight: 600; }
+                .cal-detail-status {
+                    border: 1px solid var(--divider-color, #d5dadd);
+                    border-radius: 999px; padding: 3px 8px; font-size: 10px;
+                    font-weight: 600; color: var(--secondary-text-color);
+                    background: var(--card-background-color, #fff);
+                }
+                .cal-detail-stations { display: grid; gap: 8px; }
+                .cal-detail-station {
+                    padding: 8px 11px; border-radius: 10px;
+                    background: var(--card-background-color, #fff);
+                    border: 1px solid var(--divider-color, #e2e5e8);
+                    min-width: 0;
+                    box-sizing: border-box;
+                    height: 82px;
+                    display: flex; flex-direction: column;
+                    justify-content: space-between;
+                }
+                @media (max-width: 350px) {
+                    .cal-detail-station { height: auto; min-height: 82px; }
+                }
+                .cal-detail-station-heading {
+                    display: flex; align-items: center; justify-content: space-between;
+                    flex-wrap: wrap; column-gap: 8px; row-gap: 4px; margin-bottom: 0;
+                }
+                .cal-detail-station-name {
+                    display: inline-flex; align-items: center; gap: 6px;
+                    font-size: 12px; font-weight: 600; min-width: 0;
+                }
+                .cal-detail-station-name ha-icon {
+                    color: var(--secondary-text-color); --mdc-icon-size: 16px;
+                    width: 16px; height: 16px; flex: 0 0 16px;
+                }
+                .cal-detail-amount { font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
+                .cal-detail-track {
+                    position: relative; height: 9px; border-radius: 999px; overflow: hidden;
+                    background: color-mix(in srgb, var(--primary-color, #039be5) 10%, var(--card-background-color, #fff));
+                }
+                .cal-detail-fill { display: block; height: 100%; border-radius: inherit; }
+                .actual-fill {
+                    background: var(--info-color, var(--primary-color, #039be5));
+                }
+                .cal-detail-track.is-projected {
+                    border: 1px dashed var(--info-color, var(--primary-color, #039be5));
+                    background: color-mix(in srgb, var(--info-color, #039be5) 7%, var(--card-background-color, #fff));
+                    box-sizing: border-box; height: 9px;
+                }
+                .projected-fill {
+                    width: 100%;
+                    background: repeating-linear-gradient(125deg,
+                        color-mix(in srgb, var(--info-color, #039be5) 28%, transparent) 0px,
+                        color-mix(in srgb, var(--info-color, #039be5) 28%, transparent) 5px,
+                        color-mix(in srgb, var(--info-color, #039be5) 12%, transparent) 5px,
+                        color-mix(in srgb, var(--info-color, #039be5) 12%, transparent) 10px);
+                }
+                .projected-fill.no-data { width: 0; }
+                .cal-detail-station-foot {
+                    margin-top: 0; display: flex; align-items: center;
+                    justify-content: space-between; gap: 8px; flex-wrap: wrap;
+                    font-size: 10px; color: var(--secondary-text-color);
+                }
+                .cal-detail-empty {
+                    padding: 13px 10px; border: 1px dashed var(--divider-color);
+                    border-radius: 10px; color: var(--secondary-text-color);
+                    background: var(--card-background-color, #fff);
+                }
+                .cal-detail-rain {
+                    display: flex; align-items: center; gap: 9px;
+                    border: 1px solid var(--divider-color, #e2e5e8);
+                    border-radius: 10px; background: var(--card-background-color, #fff);
+                    padding: 6px 11px; margin-top: 9px; min-width: 0;
+                    box-sizing: border-box; min-height: 64px;
+                }
+                .cal-detail-rain ha-icon {
+                    color: var(--info-color, #039be5); --mdc-icon-size: 18px;
+                    width: 18px; height: 18px; flex: 0 0 18px;
+                }
+                .cal-detail-rain-info {
+                    display: flex; flex-direction: column; gap: 2px;
+                    flex: 1; min-width: 0;
+                }
+                .cal-detail-rain-title { font-size: 12px; font-weight: 600; }
+                .cal-detail-rain-note { font-size: 10px; color: var(--secondary-text-color); }
+                .cal-detail-rain-value {
+                    font-variant-numeric: tabular-nums; font-size: 11px;
+                    font-weight: 600; text-align: right; max-width: 45%;
+                }
                 .cal-cell[data-day] { cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease; }
                 .cal-cell[data-day]:active { border-color: var(--primary-color); }
                 .cal-cell[data-day]:focus-visible { outline: 2px solid var(--primary-color); }
@@ -3018,7 +3254,15 @@ class IrrigationZonesCard extends HTMLElement {
     const done = this.state(zone.today), total = this.state(zone.planned);
     if (!this.valid(done) || !this.valid(total)) return null;
     const a = Number(done), b = Number(total);
+    // The percentage and bar must never exceed 100%. Actual and planned
+    // millimetres remain visible in their original metrics above the bar.
     return Number.isFinite(a) && Number.isFinite(b) && b > 0 ? Math.min(100,Math.max(0,a / b * 100)) : null;
+  }
+  unplannedWatering(zone) {
+    const done = this.state(zone.today), planned = this.state(zone.planned);
+    if (!this.valid(done) || !this.valid(planned)) return false;
+    const actual = Number(done), target = Number(planned);
+    return Number.isFinite(actual) && actual > 0 && Number.isFinite(target) && target === 0;
   }
   async changeDuration(direction, zone = null) {
     const id = this.durationId(zone);
@@ -3074,6 +3318,7 @@ class IrrigationZonesCard extends HTMLElement {
     const multiController = new Set(this.config.zones.map(zone => this.zoneGroup(zone))).size > 1;
     const rows = this.config.zones.map((zone,index) => {
       const running = this.running(zone), expanded = this.openZone === index, progress = this.progress(zone);
+      const unplannedWatering = this.unplannedWatering(zone);
       const sourceLabel = running ? this.irrigationLabel(zone) : null;
       const stopAll = running && this.isCycle(zone) && this.config.show_zone_stop_all ? this.stopAllId(zone) : null;
       const stopStation = running ? this.stopStationId(zone) : null;
@@ -3090,7 +3335,11 @@ class IrrigationZonesCard extends HTMLElement {
         ${stopAll ? `<div class="zone-stop-row"><span>Stop the complete cycle</span><button class="zone-stop-all" data-stop-all="${index}" ${this.busy || disconnected ? 'disabled' : ''}><ha-icon icon="mdi:stop-circle-outline"></ha-icon>Stop All</button></div>` : ''}
         ${expanded ? `<div class="details">
           <div class="metrics">${this.metric('Status',zone.status)}${this.metric('Irrigated today',zone.today)}${this.metric('Scheduled today',zone.planned)}${this.metric('Remaining today',zone.remaining)}</div>
-          ${progress === null ? '' : `<div class="progress-label"><span>Today's schedule</span><strong>${Math.round(progress)}%</strong></div><div class="progress"><div style="width:${progress}%"></div></div>`}
+          ${progress !== null
+            ? `<div class="progress-label"><span>Today's schedule</span><strong>${Math.round(progress)}%</strong></div><div class="progress"><div style="width:${progress}%"></div></div>`
+            : unplannedWatering
+              ? '<div class="progress-label"><span>Today\'s schedule</span><strong>Watered without planned target</strong></div>'
+              : ''}
           <div class="controls"><div class="duration"><label>Manual duration</label><div class="stepper">
             <button data-step="-1" data-zone="${index}" ${this.busy || disconnected || duration === null || duration <= min ? 'disabled':''}><ha-icon icon="mdi:minus"></ha-icon></button>
             <button data-info="${this.esc(this.durationId(zone))}" class="duration-value">${duration ?? '—'} min</button>

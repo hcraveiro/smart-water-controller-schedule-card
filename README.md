@@ -308,11 +308,154 @@ Only one zone expands at a time; all start collapsed. Start, Stop, Stop All and 
 Station entity IDs in the example reflect one RainBird setup. Adapt them to your controller; do not assume the entity IDs are universal.
 
 
+### Equal compact rain summary heights (V2.0.7b8)
+
+- Give both historical `Rainfall` and projected `Rain forecast` panels a
+  shared 64px minimum height and 6px vertical padding.
+- Allow either panel to grow if accessibility settings or narrower screens
+  cause additional text wrapping. The Schedule Card station cards remain 82px.
+- Keep all irrigation values, progress bars, and calendar calculations unchanged.
+
+### More compact day details (V2.0.7b7)
+
+- Reduce historical and projected station mini-cards equally from 96px to 82px.
+- Reduce station padding while preserving the solid and striped progress bars.
+- Remove the fixed 84px rainfall card minimum height; both past rainfall
+  and projected rain forecast now fit naturally around their text.
+- Reduce rainfall card vertical padding. On a very narrow screen, the
+  station cards may still grow to prevent text clipping.
+- Keep history, projected amounts, calendar layout and calculations unchanged.
+
+### Consistent rainfall summary heights (V2.0.7b6)
+
+- Fix the selected-day **Schedule Card** panel appearing taller for future
+  dates on Android tablets because the longer `Rain forecast` explanation
+  wraps into multiple lines.
+- Both historical `Rainfall` and future `Rain forecast` summaries now
+  use the same 84px minimum height, and expand if the text requires more.
+- Station cards, irrigation amounts, calculations and forecasts are unchanged.
+
+### Consistent tablet station mini-card heights (V2.0.7b5)
+
+- Use an identical 96px outer height for historical and projected
+  station mini-cards in the calendar selected-day panel on tablets.
+- Distribute the content consistently inside each card instead of relying
+  on browser-specific intrinsic height and line spacing.
+- Allow flexible card height on very narrow displays to avoid text clipping.
+- Keep existing planned/historical bars, values, and controls unchanged.
+
+### Consistent selected-day station card heights (V2.0.7b4)
+
+- Match projected irrigation progress-track height to historical actual progress
+  (9 px each), preserving the dashed and striped projected design.
+- Align the same station mini-card spacing and layout for historical and
+  projected days on narrow/tablet views.
+- No changes to calculations, rainfall cards, sensors, or dashboard settings.
+
+### Capped irrigation progress (V2.0.7b3)
+
+- Calendar historical **Actual / Planned** amounts remain unchanged, even
+  when actual irrigation exceeds the target because of weather decisions
+  or manual watering. Both the progress bar and the **% applied** text
+  are limited to **100%** (e.g. `2.14 / 0.04 mm` displays `100% applied`,
+  not `5350% applied`).
+- If a station watered while its planned target was exactly `0 mm`,
+  the calendar shows **Watered without planned target** instead of a
+  mathematically undefined percentage. With zero watering and a zero
+  target it shows **No irrigation planned**.
+- Irrigation Zones already capped progress to 100%; verified with new
+  tests. When irrigation occurred against a `0 mm` target, the Zones
+  expanded panel now shows **Watered without planned target** without
+  manufacturing a progress bar or percentage.
+- No integration changes, new sensors or history storage required.
+  Projected irrigation visuals and values are unchanged.
+
+### Selected-day mini-cards (V2.0.7b2)
+
+The selected calendar day now uses a compact, theme-aware card layout:
+
+- **Header:** selected date and an **Actual / Planned** or **Projected
+  irrigation** status pill.
+- **Historical station mini-cards:** station name, actual / planned mm,
+  a **solid progress bar** showing how much of the recorded target was
+  applied, and a compact applied-percentage label. The bar caps at 100%
+  if the applied amount exceeds the target; the label still shows the
+  full percentage.
+- **Future station mini-cards:** projected mm, a **striped and dashed
+  bar** to distinguish prediction from actual progress, and
+  **Planned · Pending**. The projected bar does not imply 100%
+  completion. Missing rates use an empty dashed bar and a
+  **Projection unavailable** label.
+- **Rain card:** actual recorded rainfall in mm for historic days, or
+  rainfall forecast probability/threshold information for future days.
+- **Safety and accessibility:** zero/missing targets never fabricate
+  percentages, active progress bars expose accessible progress values,
+  and station names are escaped. Existing day selection and calendar
+  projection calculations are unchanged.
+
+The redesign uses Home Assistant theme CSS variables, supports dark and
+light themes, and keeps compact spacing for two schedule cards side by
+side. No integration or dashboard configuration changes are required.
+
+
+
+With `calendar: true` and `calendar_history: true`, selecting a past or
+current day shows **Actual / Planned (mm)** for every station, followed by
+**Rainfall** (always in mm). For example, `1.00 / 4.00 mm` and
+`Rainfall: 3.00 mm` distinguish irrigation actually applied from the
+configured target, even after rain reduces the watering requirement.
+
+- **Actual** reads the existing per-station `Sprinkle Total Amount Today`
+  history (`state` in Home Assistant Long-Term Statistics).
+- **Planned** reads each `Forecasted Sprinkle Today` sensor's recorded
+  hourly `mean` statistic, since those sensors use
+  `state_class: measurement`. The most recent hourly measurement from
+  that local day is used. Today's values come directly from live states.
+- No additional persistence, integration sensor or Recorder retention is
+  required for the mm view. Missing recorded planned values are shown
+  as `No data`, not retroactively guessed from today's schedule.
+- If the actual entity is named
+  `sensor.rainbird_sprinkle_total_amount_today_front_lawn`, the card
+  automatically matches
+  `sensor.rainbird_forecasted_sprinkle_today_front_lawn`. This
+  also supports the `..._station_3` naming convention.
+- For any other entity naming, provide an optional parallel list,
+  in the same order as `calendar_station_sensors`:
+
+```yaml
+calendar_planned_station_sensors:
+  - sensor.rainbird_forecasted_sprinkle_today_front_lawn
+  - sensor.rainbird_forecasted_sprinkle_today_side_lawn
+  - sensor.exterior_living_room_rainbird_forecasted_sprinkle_today_station_3
+```
+
+For a selected **future watering day**, the details now show
+**Projected watering (mm)**, never minutes. The card derives each
+station's nominal mm/min rate from today's planned-mm sensor and the
+current month's scheduled minutes, then multiplies by the selected
+month's scheduled duration. Future values are projections, not promises:
+rain, schedule changes and controller decisions may change them.
+
+If today's watering target is zero because watering was blocked,
+the card can use a previous positive planned-mm measurement from the
+current month. If no reliable rate is available, it shows
+`No plan data` rather than fabricating mm. For controllers that
+cannot derive a rate automatically, configure a per-station rate:
+
+```yaml
+calendar_station_mm_per_minute: [0.42, 0.42, 0.42]
+```
+
+Rainfall remains in **mm** in both historical and projected details.
+This beta implements **mm only**; a later release may add the
+requested minutes-and-seconds display once historical duration
+statistics are available.
+
 ### Experimental calendar rain and irrigation markers
 
 The optional enhanced calendar combines **recorded** daily rain/irrigation for past days with
 **projected** irrigation and daily rain forecasts for future days. These options are off by
-default and currently being tested in PR #7:
+default and available in the current release:
 
 ```yaml
 calendar: true

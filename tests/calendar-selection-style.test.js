@@ -24,3 +24,34 @@ test('selection glow animates softly and respects reduced motion', () => {
   assert.ok(source.includes('@media (prefers-reduced-motion: reduce)'));
   assert.ok(source.includes('animation: none'));
 });
+
+test('historical and projected station mini-cards use equal bar heights', () => {
+  const actual = source.split('.cal-detail-track {')[1]?.split('}')[0] || '';
+  const projected = source.split('.cal-detail-track.is-projected {')[1]?.split('}')[0] || '';
+  const station = source.split('.cal-detail-station {')[1]?.split('}')[0] || '';
+  assert.match(actual, /height:\s*9px/);
+  assert.match(projected, /height:\s*9px/);
+  assert.match(projected, /box-sizing:\s*border-box/);
+  assert.match(station, /display:\s*flex/);
+  assert.match(station, /flex-direction:\s*column/);
+  assert.ok(source.includes('projected-fill'));
+});
+
+test('selected-day tablet cards have identical fixed height and mobile fallback', () => {
+  const card = source.split('.cal-detail-station {')[1]?.split('}')[0] || '';
+  const mobile = source.split('@media (max-width: 350px)')[1] || '';
+  assert.match(card, /height:\s*82px/);
+  assert.match(card, /box-sizing:\s*border-box/);
+  assert.match(card, /justify-content:\s*space-between/);
+  assert.match(mobile, /height:\s*auto;\s*min-height:\s*82px/);
+  assert.ok(!source.includes('.cal-details-projected .cal-detail-station { height:'));
+});
+
+test('Schedule Card rainfall and forecast summaries share compact minimum height', () => {
+  const rain = source.split('.cal-detail-rain {')[1]?.split('}')[0] || '';
+  assert.match(rain, /min-height:\s*64px/);
+  assert.match(rain, /padding:\s*6px 11px/);
+  assert.match(rain, /box-sizing:\s*border-box/);
+  assert.ok(source.includes('Forecast may change this projection'));
+  assert.ok(source.includes('Recorded precipitation'));
+});
