@@ -176,6 +176,21 @@ zones:
     valve: switch.rain_bird_sprinkler_3
 ```
 
+### Irrigation source indicators (V2.0.6b1)
+
+When a station is running, Overview and Irrigation Zones read the integration's existing
+`irrigation_source` state attribute. No new entity or dashboard YAML changes are needed.
+
+- `manual_cycle`: **Manual cycle running** in Overview and **Manual cycle** in the active zone.
+- `automatic`: **Scheduled watering**.
+- `manual`: **Manual watering**.
+- `external`: **External watering**.
+
+For a manual cycle, **Station ends in** replaces **Stopping in**, because the timer
+shows the current station's end time, not the full cycle completion time.
+Other countdowns retain the existing wording. If the source attribute is missing
+or unrecognised, generic running labels are preserved for backwards compatibility.
+
 ### Multiple controllers in one Zones Card
 
 Zones from different integration entries may be displayed together. Assign a
