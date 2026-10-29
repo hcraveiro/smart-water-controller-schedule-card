@@ -10,6 +10,13 @@ Custom Home Assistant dashboard cards for the [Smart Water Controller integratio
 
 The Schedule Card's original custom-element name remains unchanged for backward compatibility. Overview and Zones also retain their existing names.
 
+### Consistent green sprinkler icons (V2.0.8b2)
+
+- Use the same theme-aware green `--success-color` for the sprinkler
+  icons in selected-day projected station cards, empty projected days and
+  the calendar legend. Blue remains reserved for the rainfall icon.
+- No changes to irrigation amounts, scheduling or weather calculations.
+
 ### Calendar empty-day sprinkler icon (V2.0.8b1)
 
 - Show the existing sprinkler icon before **No irrigation currently projected**
