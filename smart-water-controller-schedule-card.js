@@ -1312,15 +1312,20 @@ class IrrigationScheduleCard extends HTMLElement {
             const hasAmount = finiteAmount(amount);
             const hasPlan = finiteAmount(planned);
             const usablePlan = hasPlan && planned > 0;
+            // Cap the shown percentage and bar at 100%; keep original
+            // actual/planned millimetres visible without alteration.
             const percent = !projected && hasAmount && usablePlan
-                ? Math.round((amount / planned) * 100) : null;
-            const width = percent === null ? 0 : Math.max(0, Math.min(100, percent));
+                ? Math.min(100, Math.max(0, Math.round((amount / planned) * 100))) : null;
+            const width = percent === null ? 0 : percent;
             const amountLabel = projected
                 ? (hasAmount ? amount.toFixed(2) + " mm" : "No plan data")
                 : formattedAmount(amount) + " / " + formattedAmount(planned) + " mm";
             const secondaryLabel = projected
                 ? (hasAmount ? "Planned · Pending" : "Projection unavailable")
-                : (percent !== null ? percent + "% applied" : "Progress unavailable");
+                : (percent !== null ? percent + "% applied"
+                    : hasAmount && hasPlan && planned === 0
+                        ? (amount > 0 ? "Watered without planned target" : "No irrigation planned")
+                        : "Progress unavailable");
             const trackClass = projected ? "cal-detail-track is-projected"
                 : "cal-detail-track is-actual";
             const fill = projected
@@ -3241,7 +3246,15 @@ class IrrigationZonesCard extends HTMLElement {
     const done = this.state(zone.today), total = this.state(zone.planned);
     if (!this.valid(done) || !this.valid(total)) return null;
     const a = Number(done), b = Number(total);
+    // The percentage and bar must never exceed 100%. Actual and planned
+    // millimetres remain visible in their original metrics above the bar.
     return Number.isFinite(a) && Number.isFinite(b) && b > 0 ? Math.min(100,Math.max(0,a / b * 100)) : null;
+  }
+  unplannedWatering(zone) {
+    const done = this.state(zone.today), planned = this.state(zone.planned);
+    if (!this.valid(done) || !this.valid(planned)) return false;
+    const actual = Number(done), target = Number(planned);
+    return Number.isFinite(actual) && actual > 0 && Number.isFinite(target) && target === 0;
   }
   async changeDuration(direction, zone = null) {
     const id = this.durationId(zone);
@@ -3297,6 +3310,7 @@ class IrrigationZonesCard extends HTMLElement {
     const multiController = new Set(this.config.zones.map(zone => this.zoneGroup(zone))).size > 1;
     const rows = this.config.zones.map((zone,index) => {
       const running = this.running(zone), expanded = this.openZone === index, progress = this.progress(zone);
+      const unplannedWatering = this.unplannedWatering(zone);
       const sourceLabel = running ? this.irrigationLabel(zone) : null;
       const stopAll = running && this.isCycle(zone) && this.config.show_zone_stop_all ? this.stopAllId(zone) : null;
       const stopStation = running ? this.stopStationId(zone) : null;
@@ -3313,7 +3327,11 @@ class IrrigationZonesCard extends HTMLElement {
         ${stopAll ? `<div class="zone-stop-row"><span>Stop the complete cycle</span><button class="zone-stop-all" data-stop-all="${index}" ${this.busy || disconnected ? 'disabled' : ''}><ha-icon icon="mdi:stop-circle-outline"></ha-icon>Stop All</button></div>` : ''}
         ${expanded ? `<div class="details">
           <div class="metrics">${this.metric('Status',zone.status)}${this.metric('Irrigated today',zone.today)}${this.metric('Scheduled today',zone.planned)}${this.metric('Remaining today',zone.remaining)}</div>
-          ${progress === null ? '' : `<div class="progress-label"><span>Today's schedule</span><strong>${Math.round(progress)}%</strong></div><div class="progress"><div style="width:${progress}%"></div></div>`}
+          ${progress !== null
+            ? `<div class="progress-label"><span>Today's schedule</span><strong>${Math.round(progress)}%</strong></div><div class="progress"><div style="width:${progress}%"></div></div>`
+            : unplannedWatering
+              ? '<div class="progress-label"><span>Today\'s schedule</span><strong>Watered without planned target</strong></div>'
+              : ''}
           <div class="controls"><div class="duration"><label>Manual duration</label><div class="stepper">
             <button data-step="-1" data-zone="${index}" ${this.busy || disconnected || duration === null || duration <= min ? 'disabled':''}><ha-icon icon="mdi:minus"></ha-icon></button>
             <button data-info="${this.esc(this.durationId(zone))}" class="duration-value">${duration ?? '—'} min</button>
