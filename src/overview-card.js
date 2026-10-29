@@ -264,7 +264,7 @@ class IrrigationSummaryCard extends HTMLElement {
     const station = this.state(c.station);
     const nextTime = Date.parse(this.state(c.next));
     const lastTime = Date.parse(this.state(c.last));
-    return { ...c, controller, connectionLost, active, available, station, source,
+    return { ...c, controller, controllerEntity: c.controller, connectionLost, active, available, station, source,
       nextTime: Number.isFinite(nextTime) && nextTime >= Date.now() ? nextTime : null,
       lastTime: Number.isFinite(lastTime) && lastTime <= Date.now() ? lastTime : null };
   }
@@ -302,7 +302,7 @@ class IrrigationSummaryCard extends HTMLElement {
         </div>` : ''}
         ${c.active && this.irrigationLabel(c.source) ? `<small class="controller-source">${this.escape(this.irrigationLabel(c.source))}</small>` : ''}
         ${c.active ? `<small class="controller-countdown" data-live-controller="${index}">${this.escape(this.countdownFor(c.end, c.source))}</small>` : ''}
-        ${expanded ? this.cycleAction(c, c.active, c.source) : ''}
+        ${expanded ? this.cycleAction({...c, controller: c.controllerEntity}, c.active, c.source) : ''}
       </section>`;
     }).join('');
     return summary + sections;
