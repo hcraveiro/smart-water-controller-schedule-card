@@ -2118,17 +2118,17 @@ class IrrigationScheduleCard extends HTMLElement {
                 }
                 .cal-detail-stations { display: grid; gap: 8px; }
                 .cal-detail-station {
-                    padding: 10px 11px; border-radius: 10px;
+                    padding: 8px 11px; border-radius: 10px;
                     background: var(--card-background-color, #fff);
                     border: 1px solid var(--divider-color, #e2e5e8);
                     min-width: 0;
                     box-sizing: border-box;
-                    height: 96px;
+                    height: 82px;
                     display: flex; flex-direction: column;
                     justify-content: space-between;
                 }
                 @media (max-width: 350px) {
-                    .cal-detail-station { height: auto; min-height: 96px; }
+                    .cal-detail-station { height: auto; min-height: 82px; }
                 }
                 .cal-detail-station-heading {
                     display: flex; align-items: center; justify-content: space-between;
@@ -2179,8 +2179,8 @@ class IrrigationScheduleCard extends HTMLElement {
                     display: flex; align-items: center; gap: 9px;
                     border: 1px solid var(--divider-color, #e2e5e8);
                     border-radius: 10px; background: var(--card-background-color, #fff);
-                    padding: 9px 11px; margin-top: 9px; min-width: 0;
-                    box-sizing: border-box; min-height: 84px;
+                    padding: 7px 11px; margin-top: 9px; min-width: 0;
+                    box-sizing: border-box;
                 }
                 .cal-detail-rain ha-icon {
                     color: var(--info-color, #039be5); --mdc-icon-size: 18px;
