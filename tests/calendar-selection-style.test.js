@@ -47,10 +47,10 @@ test('selected-day tablet cards have identical fixed height and mobile fallback'
   assert.ok(!source.includes('.cal-details-projected .cal-detail-station { height:'));
 });
 
-test('Schedule Card rainfall and forecast summaries use natural compact height', () => {
+test('Schedule Card rainfall and forecast summaries share compact minimum height', () => {
   const rain = source.split('.cal-detail-rain {')[1]?.split('}')[0] || '';
-  assert.doesNotMatch(rain, /min-height/);
-  assert.match(rain, /padding:\s*7px 11px/);
+  assert.match(rain, /min-height:\s*64px/);
+  assert.match(rain, /padding:\s*6px 11px/);
   assert.match(rain, /box-sizing:\s*border-box/);
   assert.ok(source.includes('Forecast may change this projection'));
   assert.ok(source.includes('Recorded precipitation'));
