@@ -2776,6 +2776,7 @@ class IrrigationZonesCard extends HTMLElement {
       ...(this.config?.zones || []).flatMap(zone => [
         zone.status, zone.today, zone.planned, zone.remaining, zone.valve,
         zone.duration, zone.end_time, zone.stop, zone.stop_station,
+        this.stationStopCandidate(zone),
         ...(zone.connection_switches || [])
       ])
     ].filter(Boolean);
@@ -2834,14 +2835,15 @@ class IrrigationZonesCard extends HTMLElement {
     return groups.size > 1 && this.zoneGroup(zone) !== primaryGroup && !zone.stop
       ? null : this.stopId(zone);
   }
-  stopStationId(zone) {
-    if (zone?.stop_station) return this.entity(zone.stop_station) ? zone.stop_station : null;
-    // Existing dashboards can use new integration buttons without rewriting YAML
-    // when start and station-stop entity IDs share the standard naming convention.
+  stationStopCandidate(zone) {
+    // Standard companion stop button naming for start entities.
     const start = zone?.start;
     if (!start?.startsWith('button.') || !start.includes('_sprinkle_')) return null;
-    const candidate = start.replace('_sprinkle_', '_stop_');
-    return this.entity(candidate) ? candidate : null;
+    return start.replace('_sprinkle_', '_stop_');
+  }
+  stopStationId(zone) {
+    const target = zone?.stop_station || this.stationStopCandidate(zone);
+    return target && this.entity(target) ? target : null;
   }
   endTimeId(zone = null) { return zone?.end_time || this.config.end_time; }
   duration(zone = null) {
