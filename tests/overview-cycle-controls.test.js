@@ -70,7 +70,7 @@ test('Overview preserves all four controller indicators and shows configured cyc
     assert.equal(sections.length,2);
     for(const section of sections) {
       for(const label of ['Next irrigation','Last irrigation','Current station','Controller']) {
-        assert.match(section.textContent,label);
+        assert.ok(section.textContent.includes(label));
       }
     }
     assert.match(sections[0].textContent,/3 stations · 15 min total/);
@@ -85,10 +85,10 @@ test('Run Cycle executes the intended controller only with confirmation',async()
     const buttons=f.card.shadowRoot.querySelectorAll('[data-cycle-action="run_cycle"]');
     buttons[0].click();
     await new Promise(resolve=>setTimeout(resolve,0));
-    assert.deepEqual(f.calls[0],{domain:'button',service:'press',data:{entity_id:'button.exterior_living_room_rainbird_run_cycle'}});
+    assert.deepEqual(JSON.parse(JSON.stringify(f.calls[0])),{domain:'button',service:'press',data:{entity_id:'button.exterior_living_room_rainbird_run_cycle'}});
     f.card.shadowRoot.querySelectorAll('[data-cycle-action="run_cycle"]')[1].click();
     await new Promise(resolve=>setTimeout(resolve,0));
-    assert.deepEqual(f.calls[1],{domain:'button',service:'press',data:{entity_id:'button.exterior_living_room_bushes_run_cycle'}});
+    assert.deepEqual(JSON.parse(JSON.stringify(f.calls[1])),{domain:'button',service:'press',data:{entity_id:'button.exterior_living_room_bushes_run_cycle'}});
     const count=f.calls.length;
     f.dom.window.confirm=()=>false;
     f.card.shadowRoot.querySelector('[data-cycle-action="run_cycle"]').click();
