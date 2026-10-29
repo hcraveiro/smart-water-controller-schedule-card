@@ -176,7 +176,7 @@ zones:
     valve: switch.rain_bird_sprinkler_3
 ```
 
-### Controller Run Cycle and Stop All (V2.0.6b4)
+### Controller Run Cycle and Stop All (V2.0.6)
 
 In the Irrigation Overview, each controller retains its four existing tiles:
 **Next irrigation**, **Last irrigation**, **Current station**, and **Controller**.
@@ -213,7 +213,7 @@ controllers:
 The existing dashboard YAML does not need changing when the entities can be
 resolved automatically. Independent controllers have independent controls.
 
-### Irrigation source indicators (V2.0.6b1)
+### Irrigation source indicators (V2.0.6)
 
 When a station is running, Overview and Irrigation Zones read the integration's existing
 `irrigation_source` state attribute. No new entity or dashboard YAML changes are needed.
@@ -228,7 +228,7 @@ shows the current station's end time, not the full cycle completion time.
 Other countdowns retain the existing wording. If the source attribute is missing
 or unrecognised, generic running labels are preserved for backwards compatibility.
 
-### Stop and Stop All (V2.0.6b3)
+### Stop and Stop All (V2.0.6)
 
 The active station always uses the same **Stop** label in expanded controls
 when its dedicated station-stop entity is available. Stop ends **only that station**.
@@ -262,7 +262,7 @@ stopping another controller.
 The legacy footer-based Stop All is still available with
 `show_zone_stop_all: false`, but only during cycles.
 The integration must expose the station-specific Stop button
-(Smart Water Controller V1.1.6b3 or later).
+(Smart Water Controller V1.1.6 or later).
 
 ### Multiple controllers in one Zones Card
 
