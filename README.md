@@ -10,6 +10,13 @@ Custom Home Assistant dashboard cards for the [Smart Water Controller integratio
 
 The Schedule Card's original custom-element name remains unchanged for backward compatibility. Overview and Zones also retain their existing names.
 
+### Calendar empty irrigation icon (V2.0.8b1)
+
+- Show the same sprinkler icon used in station cards beside
+  **No irrigation currently projected** in selected-day details.
+- Preserve the existing empty-state message, compact spacing,
+  forecasts, and all history/projection calculations.
+
 ## Installation
 
 1. Install **Smart Water Controller Cards** through HACS (Dashboard/Frontend repository). If upgrading the original Smart Water Controller Schedule Card repository, use **Redownload** to select the desired release.
